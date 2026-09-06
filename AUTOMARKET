@@ -1,5 +1,4 @@
---========================================================--
--- AUTOMARKET
+--AUTOMARKET
 --========================================================--
 -- MARKET AUTO PERYTON
 --
@@ -10,39 +9,26 @@
 -- AUTO LIST PERYTON
 --
 -- BLACKLIST:
---   AMBIL DARI GITHUB addusername.json
---   CEK NAMA PLAYER SETIAP 10 DETIK
---   USERNAME SENDIRI DIKECUALIKAN
+--   Diambil dari GitHub addusername.json
+--   Username sendiri dikecualikan
+--   Hanya berlaku di Trade World
+--   Jika blacklist terdeteksi -> SERVER HOP
 --
--- BLACKLIST HANYA BERLAKU DI TRADE WORLD
---
--- JIKA BLACKLIST TERDETEKSI:
---   -> SERVER HOP
---   -> PILIH SERVER TERAMAI
---   -> TAPI BELUM PENUH
---   -> TIDAK KEMBALI KE JOBID SEKARANG
+-- SERVER HOP:
+--   Teramai yang belum penuh
+--   Maksimal 25 player
 --
 -- PERYTON MONITOR:
 -- MAIN WORLD:
---   PERYTON >= 1
---       -> TRADE WORLD
---
---   PERYTON < 1
---   + asepppy38 ADA
---       -> TUNGGU
---
---   PERYTON < 1
---   + asepppy38 TIDAK ADA
---       -> KICK
+--   PERYTON >= 1 -> TRADE WORLD
+--   PERYTON < 1 + REQUIRED_PLAYER ADA -> TUNGGU
+--   PERYTON < 1 + REQUIRED_PLAYER TIDAK ADA -> KICK
 --
 -- TRADE WORLD:
---   PERYTON >= 1
---       -> TETAP + AUTO LIST
+--   PERYTON >= 1 -> TETAP + AUTO LIST
+--   PERYTON < 1 -> KICK
 --
---   PERYTON < 1
---       -> KICK
---
--- PERYTON SELALU DICEK SETIAP 10 DETIK
+-- PERYTON SELALU DICEK ULANG SETIAP 10 DETIK
 --========================================================--
 
 
@@ -56,13 +42,8 @@ local MIN_PERYTON = 1
 -- di Main World
 local REQUIRED_PLAYER = "asepppy38"
 
-
---========================================================--
--- TRADE WORLD
---========================================================--
-
+-- Trade World
 local TRADE_WORLD_ID = 129954712878723
-
 
 --========================================================--
 -- GITHUB BLACKLIST
@@ -72,6 +53,15 @@ local BLACKLIST_URL =
     "https://raw.githubusercontent.com/"
     .. "juraganzenx/roblox-jobs/"
     .. "refs/heads/main/addusername.json"
+
+--========================================================--
+-- SERVER HOP
+--========================================================--
+
+-- Server teramai yang masih memenuhi batas ini
+local MAX_TARGET_PLAYERS = 25
+
+local HOP_DELAY = 1
 
 
 --========================================================--
@@ -115,48 +105,27 @@ local PERYTON_CHECK_DELAY = 10
 
 
 --========================================================--
--- SERVER HOP
---========================================================--
-
-local HOP_DELAY = 1
-
-
---========================================================--
 -- SERVICES
 --========================================================--
 
 local Players =
-    game:GetService(
-        "Players"
-    )
-
+    game:GetService("Players")
 
 local ReplicatedStorage =
-    game:GetService(
-        "ReplicatedStorage"
-    )
-
+    game:GetService("ReplicatedStorage")
 
 local TeleportService =
-    game:GetService(
-        "TeleportService"
-    )
-
+    game:GetService("TeleportService")
 
 local HttpService =
-    game:GetService(
-        "HttpService"
-    )
+    game:GetService("HttpService")
 
 
 local LocalPlayer =
     Players.LocalPlayer
 
-
 local Backpack =
-    LocalPlayer:WaitForChild(
-        "Backpack"
-    )
+    LocalPlayer:WaitForChild("Backpack")
 
 
 --========================================================--
@@ -217,21 +186,14 @@ local RemoveListing =
 
 local BoothReplication
 
-
 pcall(function()
 
     BoothReplication =
         require(
             ReplicatedStorage
-                :WaitForChild(
-                    "Modules"
-                )
-                :WaitForChild(
-                    "ReplicationReciever"
-                )
-        ).new(
-            "Booths"
-        )
+                :WaitForChild("Modules")
+                :WaitForChild("ReplicationReciever")
+        ).new("Booths")
 
 end)
 
@@ -246,33 +208,52 @@ local isTravelingToTrade = false
 
 local autoListingStarted = false
 
-local blacklistTeleporting = false
-
-
---========================================================--
--- BLACKLIST DATA
---========================================================--
+local HopRunning = false
 
 local blacklist = {}
 
 
 --========================================================--
--- LOAD BLACKLIST FROM GITHUB
---========================================================--
--- Hanya dilakukan ketika script pertama kali dijalankan.
---
--- Setelah itu pengecekan player menggunakan table lokal.
--- Jadi tidak request GitHub setiap 10 detik.
+-- KICK
 --========================================================--
 
-local function loadBlacklistFromGitHub()
+local function kickPlayer(reason)
+
+    if isKicked then
+        return
+    end
+
+    isKicked = true
+
+    warn(
+        "[KICK]",
+        tostring(reason)
+    )
+
+    pcall(function()
+
+        LocalPlayer:Kick(
+            tostring(reason)
+        )
+
+    end)
+
+end
+
+
+--========================================================--
+-- LOAD BLACKLIST FROM GITHUB
+--========================================================--
+
+local function loadBlacklist()
+
+    blacklist = {}
 
     print(
         "[BLACKLIST] Reading GitHub..."
     )
 
-
-    local success, response =
+    local success, result =
         pcall(function()
 
             return game:HttpGet(
@@ -285,8 +266,8 @@ local function loadBlacklistFromGitHub()
     if not success then
 
         warn(
-            "[BLACKLIST] HTTP ERROR:",
-            tostring(response)
+            "[BLACKLIST] GitHub request failed:",
+            tostring(result)
         )
 
         return false
@@ -298,7 +279,7 @@ local function loadBlacklistFromGitHub()
         pcall(function()
 
             return HttpService:JSONDecode(
-                response
+                result
             )
 
         end)
@@ -307,7 +288,8 @@ local function loadBlacklistFromGitHub()
     if not decodeSuccess then
 
         warn(
-            "[BLACKLIST] JSON DECODE ERROR"
+            "[BLACKLIST] JSON decode failed:",
+            tostring(data)
         )
 
         return false
@@ -315,10 +297,10 @@ local function loadBlacklistFromGitHub()
     end
 
 
-    if typeof(data) ~= "table" then
+    if type(data) ~= "table" then
 
         warn(
-            "[BLACKLIST] Format JSON tidak valid."
+            "[BLACKLIST] Data bukan table."
         )
 
         return false
@@ -331,33 +313,27 @@ local function loadBlacklistFromGitHub()
 
     for _, entry in ipairs(data) do
 
-        if typeof(entry) == "table" then
+        if type(entry) == "table" then
 
             local username =
                 entry.username
 
 
             if username
-            and tostring(username) ~= "" then
+            and type(username) == "string" then
 
-                local normalized =
-                    string.lower(
-                        tostring(username)
-                    )
+                local lowerName =
+                    username:lower()
 
 
                 --================================================--
                 -- JANGAN MASUKKAN USERNAME SENDIRI
                 --================================================--
 
-                if normalized
-                    ~= string.lower(
-                        LocalPlayer.Name
-                    ) then
+                if lowerName
+                    ~= LocalPlayer.Name:lower() then
 
-                    blacklist[
-                        normalized
-                    ] = true
+                    blacklist[lowerName] = true
 
                     count += 1
 
@@ -378,13 +354,8 @@ local function loadBlacklistFromGitHub()
 
 
     print(
-        "[BLACKLIST] My Username:",
+        "[BLACKLIST] Own username excluded:",
         LocalPlayer.Name
-    )
-
-
-    print(
-        "[BLACKLIST] My username excluded: YES"
     )
 
 
@@ -414,21 +385,21 @@ local function isBlacklistedPlayerPresent()
         Players:GetPlayers()
     ) do
 
-        --================================================--
-        -- JANGAN PERNAH TARGET DIRI SENDIRI
-        --================================================--
-
+        -- Jangan pernah target diri sendiri
         if player ~= LocalPlayer then
 
             local username =
-                string.lower(
-                    player.Name
-                )
+                player.Name:lower()
 
 
-            if blacklist[username] then
+            if username
+                ~= LocalPlayer.Name:lower() then
 
-                return player.Name
+                if blacklist[username] then
+
+                    return player.Name
+
+                end
 
             end
 
@@ -438,39 +409,6 @@ local function isBlacklistedPlayerPresent()
 
 
     return nil
-
-end
-
-
---========================================================--
--- KICK
---========================================================--
-
-local function kickPlayer(reason)
-
-    if isKicked then
-
-        return
-
-    end
-
-
-    isKicked = true
-
-
-    warn(
-        "[KICK]",
-        tostring(reason)
-    )
-
-
-    pcall(function()
-
-        LocalPlayer:Kick(
-            tostring(reason)
-        )
-
-    end)
 
 end
 
@@ -555,7 +493,8 @@ local function isRequiredPlayerPresent()
         Players:GetPlayers()
     ) do
 
-        if player.Name == REQUIRED_PLAYER then
+        if player.Name:lower()
+            == REQUIRED_PLAYER:lower() then
 
             return true
 
@@ -563,8 +502,402 @@ local function isRequiredPlayerPresent()
 
     end
 
-
     return false
+
+end
+
+
+--========================================================--
+-- GET PUBLIC SERVERS
+--========================================================--
+
+local function getServers()
+
+    local Servers = {}
+
+    local Cursor = ""
+
+
+    repeat
+
+        local Url =
+            "https://games.roblox.com/v1/games/"
+            .. game.PlaceId
+            .. "/servers/Public?sortOrder=Asc&limit=100"
+
+
+        if Cursor ~= "" then
+
+            Url =
+                Url
+                .. "&cursor="
+                .. HttpService:UrlEncode(
+                    Cursor
+                )
+
+        end
+
+
+        print(
+            "[SERVER HOP] Request server list..."
+        )
+
+
+        local Success, Result =
+            pcall(function()
+
+                return game:HttpGet(
+                    Url
+                )
+
+            end)
+
+
+        if not Success then
+
+            warn(
+                "[SERVER HOP] HTTP ERROR:",
+                tostring(Result)
+            )
+
+            return Servers
+
+        end
+
+
+        local DecodeSuccess, Data =
+            pcall(function()
+
+                return HttpService:JSONDecode(
+                    Result
+                )
+
+            end)
+
+
+        if not DecodeSuccess then
+
+            warn(
+                "[SERVER HOP] JSON DECODE ERROR"
+            )
+
+            return Servers
+
+        end
+
+
+        for _, Server in ipairs(
+            Data.data or {}
+        ) do
+
+            --================================================--
+            -- JANGAN KEMBALI KE SERVER SEKARANG
+            --================================================--
+
+            if Server.id ~= game.JobId
+
+                --================================================--
+                -- HARUS BELUM PENUH
+                --================================================--
+
+                and Server.playing
+                    < Server.maxPlayers
+
+                --================================================--
+                -- MAKSIMAL 25 PLAYER
+                --================================================--
+
+                and Server.playing
+                    <= MAX_TARGET_PLAYERS then
+
+
+                table.insert(
+                    Servers,
+                    Server
+                )
+
+            end
+
+        end
+
+
+        Cursor =
+            Data.nextPageCursor or ""
+
+
+    until Cursor == ""
+
+
+    return Servers
+
+end
+
+
+--========================================================--
+-- GET SERVER TERAMAI
+--========================================================--
+
+local function getHighestServer(
+    Servers
+)
+
+    if #Servers == 0 then
+
+        return nil
+
+    end
+
+
+    table.sort(
+        Servers,
+        function(A, B)
+
+            return A.playing > B.playing
+
+        end
+    )
+
+
+    local HighestPlayers =
+        Servers[1].playing
+
+
+    local Candidates = {}
+
+
+    for _, Server in ipairs(
+        Servers
+    ) do
+
+        if Server.playing
+            == HighestPlayers then
+
+            table.insert(
+                Candidates,
+                Server
+            )
+
+        else
+
+            break
+
+        end
+
+    end
+
+
+    if #Candidates == 0 then
+
+        return nil
+
+    end
+
+
+    return Candidates[
+        math.random(
+            1,
+            #Candidates
+        )
+    ]
+
+end
+
+
+--========================================================--
+-- HOP TO SERVER TERAMAI
+--========================================================--
+
+local function hopToHighestServer()
+
+    if HopRunning then
+
+        return false
+
+    end
+
+
+    HopRunning = true
+
+
+    print(
+        "=========================================="
+    )
+
+    print(
+        "[SERVER HOP] Mencari server teramai..."
+    )
+
+    print(
+        "[SERVER HOP] Maksimal:",
+        MAX_TARGET_PLAYERS,
+        "player"
+    )
+
+    print(
+        "=========================================="
+    )
+
+
+    task.wait(
+        HOP_DELAY
+    )
+
+
+    local Servers =
+        getServers()
+
+
+    if #Servers == 0 then
+
+        warn(
+            "[SERVER HOP] Tidak ada server yang memenuhi config."
+        )
+
+        HopRunning = false
+
+        return false
+
+    end
+
+
+    --====================================================--
+    -- SORT TERAMAI
+    --====================================================--
+
+    table.sort(
+        Servers,
+        function(A, B)
+
+            return A.playing > B.playing
+
+        end
+    )
+
+
+    --====================================================--
+    -- DEBUG TOP 10
+    --====================================================--
+
+    print(
+        "=========================================="
+    )
+
+    print(
+        "[SERVER HOP] TOP 10 SERVER TERAMAI"
+    )
+
+    print(
+        "[SERVER HOP] MAX PLAYER:",
+        MAX_TARGET_PLAYERS
+    )
+
+    print(
+        "=========================================="
+    )
+
+
+    for i = 1, math.min(
+        10,
+        #Servers
+    ) do
+
+        local Server =
+            Servers[i]
+
+
+        print(
+            i,
+            "| Players:",
+            Server.playing,
+            "/",
+            Server.maxPlayers,
+            "| JobId:",
+            Server.id
+        )
+
+    end
+
+
+    --====================================================--
+    -- SELECT SERVER
+    --====================================================--
+
+    local Server =
+        getHighestServer(
+            Servers
+        )
+
+
+    if not Server then
+
+        warn(
+            "[SERVER HOP] Gagal memilih server."
+        )
+
+        HopRunning = false
+
+        return false
+
+    end
+
+
+    print(
+        "=========================================="
+    )
+
+    print(
+        "[SERVER HOP] SERVER TERPILIH"
+    )
+
+    print(
+        "[SERVER HOP] Players:",
+        Server.playing,
+        "/",
+        Server.maxPlayers
+    )
+
+    print(
+        "[SERVER HOP] JobId:",
+        Server.id
+    )
+
+    print(
+        "=========================================="
+    )
+
+
+    --====================================================--
+    -- TELEPORT KE INSTANCE SERVER
+    --====================================================--
+
+    local Success, Error =
+        pcall(function()
+
+            TeleportService:
+                TeleportToPlaceInstance(
+                    game.PlaceId,
+                    Server.id,
+                    LocalPlayer
+                )
+
+        end)
+
+
+    if not Success then
+
+        warn(
+            "[SERVER HOP] TELEPORT ERROR:",
+            tostring(Error)
+        )
+
+        HopRunning = false
+
+        return false
+
+    end
+
+
+    return true
 
 end
 
@@ -582,7 +915,8 @@ local function travelToTradeWorld()
     end
 
 
-    if game.PlaceId == TRADE_WORLD_ID then
+    if game.PlaceId
+        == TRADE_WORLD_ID then
 
         return true
 
@@ -595,7 +929,6 @@ local function travelToTradeWorld()
     print(
         "[TRADE] Peryton detected."
     )
-
 
     print(
         "[TRADE] Traveling to Trade World..."
@@ -617,9 +950,7 @@ local function travelToTradeWorld()
             tostring(err)
         )
 
-
         isTravelingToTrade = false
-
 
         return false
 
@@ -728,10 +1059,7 @@ local function waitForClaim(
         end
 
 
-        task.wait(
-            0.5
-        )
-
+        task.wait(0.5)
 
         elapsed += 0.5
 
@@ -815,7 +1143,6 @@ local function claimBooth()
             "[BOOTH] Tidak ada booth kosong."
         )
 
-
         return false
 
     end
@@ -844,7 +1171,6 @@ local function claimBooth()
             tostring(err)
         )
 
-
         return false
 
     end
@@ -863,7 +1189,6 @@ local function claimBooth()
             "[BOOTH] SUCCESS:",
             booth.Name
         )
-
 
         return true
 
@@ -896,9 +1221,7 @@ local function getWeight(
 
     if weight then
 
-        return tonumber(
-            weight
-        )
+        return tonumber(weight)
 
     end
 
@@ -976,7 +1299,6 @@ local function getBoothData()
             "[BOOTH DATA] ReplicationReciever unavailable."
         )
 
-
         return nil
 
     end
@@ -996,7 +1318,6 @@ local function getBoothData()
             "[BOOTH DATA] Failed:",
             tostring(data)
         )
-
 
         return nil
 
@@ -1029,7 +1350,6 @@ local function removeInvalidListings()
             "[REMOVE] Booth data tidak tersedia."
         )
 
-
         return
 
     end
@@ -1053,7 +1373,6 @@ local function removeInvalidListings()
             "[REMOVE] Player booth data tidak ditemukan."
         )
 
-
         return
 
     end
@@ -1069,15 +1388,13 @@ local function removeInvalidListings()
             "[REMOVE] Tidak ada listing."
         )
 
-
         return
 
     end
 
 
     local items =
-        playerData.Items
-        or {}
+        playerData.Items or {}
 
 
     local checked = 0
@@ -1214,7 +1531,6 @@ local function listPet(
             tool.Name
         )
 
-
         return false
 
     end
@@ -1248,9 +1564,7 @@ local function listPet(
                 "[LISTED] %s | KG=%s | UUID=%s | PRICE=%s",
                 tool.Name,
                 tostring(
-                    getWeight(
-                        tool.Name
-                    )
+                    getWeight(tool.Name)
                 ),
                 tostring(uuid),
                 tostring(PRICE)
@@ -1362,14 +1676,38 @@ local function startAutoListing()
         end
 
 
-        -- Jika kembali ke Main World,
-        -- stop Auto Listing.
-        if game.PlaceId ~= TRADE_WORLD_ID then
+        --================================================--
+        -- HARUS TRADE WORLD
+        --================================================--
+
+        if game.PlaceId
+            ~= TRADE_WORLD_ID then
 
             warn(
                 "[AUTO LISTER] Tidak berada di Trade World."
             )
 
+            return
+
+        end
+
+
+        --================================================--
+        -- BLACKLIST CHECK
+        --================================================--
+
+        local badPlayer =
+            isBlacklistedPlayerPresent()
+
+
+        if badPlayer then
+
+            warn(
+                "[AUTO LISTER] Blacklist detected:",
+                badPlayer
+            )
+
+            hopToHighestServer()
 
             return
 
@@ -1409,9 +1747,7 @@ local function startAutoListing()
             if tool
             and tool.Parent == Backpack then
 
-                listPet(
-                    tool
-                )
+                listPet(tool)
 
 
                 task.wait(
@@ -1433,443 +1769,7 @@ end
 
 
 --========================================================--
--- GET PUBLIC SERVERS
---========================================================--
--- Mengambil server public untuk TRADE WORLD.
---
--- Filter:
--- 1. Bukan JobId sekarang
--- 2. Belum penuh
---========================================================--
-
-local function getPublicServers()
-
-    local servers = {}
-
-    local cursor = ""
-
-
-    repeat
-
-        local url =
-            "https://games.roblox.com/v1/games/"
-            .. tostring(
-                TRADE_WORLD_ID
-            )
-            .. "/servers/Public?sortOrder=Desc&limit=100"
-
-
-        if cursor ~= "" then
-
-            url =
-                url
-                .. "&cursor="
-                .. HttpService:UrlEncode(
-                    cursor
-                )
-
-        end
-
-
-        print(
-            "[SERVER HOP] Request server list..."
-        )
-
-
-        local success, response =
-            pcall(function()
-
-                return game:HttpGet(
-                    url
-                )
-
-            end)
-
-
-        if not success then
-
-            warn(
-                "[SERVER HOP] HTTP ERROR:",
-                tostring(response)
-            )
-
-
-            return servers
-
-        end
-
-
-        local decodeSuccess, data =
-            pcall(function()
-
-                return HttpService:JSONDecode(
-                    response
-                )
-
-            end)
-
-
-        if not decodeSuccess then
-
-            warn(
-                "[SERVER HOP] JSON DECODE ERROR"
-            )
-
-
-            return servers
-
-        end
-
-
-        for _, server in ipairs(
-            data.data or {}
-        ) do
-
-            --================================================--
-            -- JANGAN KEMBALI KE SERVER SEKARANG
-            --================================================--
-
-            if server.id ~= game.JobId
-
-            --================================================--
-            -- HARUS MASIH ADA SLOT
-            --================================================--
-
-            and server.playing < server.maxPlayers then
-
-                table.insert(
-                    servers,
-                    server
-                )
-
-            end
-
-        end
-
-
-        cursor =
-            data.nextPageCursor
-            or ""
-
-
-    until cursor == ""
-
-
-    return servers
-
-end
-
-
---========================================================--
--- FIND BUSIEST SERVER
---========================================================--
--- TERAMAI TAPI BELUM PENUH.
---========================================================--
-
-local function getBusiestServer(
-    servers
-)
-
-    if #servers == 0 then
-
-        return nil
-
-    end
-
-
-    table.sort(
-        servers,
-        function(a, b)
-
-            return a.playing > b.playing
-
-        end
-    )
-
-
-    return servers[1]
-
-end
-
-
---========================================================--
--- TELEPORT TO BUSIEST TRADE SERVER
---========================================================--
-
-local function teleportToNewTradeServer(
-    reason
-)
-
-    if blacklistTeleporting then
-
-        return false
-
-    end
-
-
-    if isKicked then
-
-        return false
-
-    end
-
-
-    blacklistTeleporting = true
-
-
-    warn(
-        "[BLACKLIST]",
-        tostring(reason)
-    )
-
-
-    print(
-        "=========================================="
-    )
-
-
-    print(
-        "[SERVER HOP] Blacklist detected."
-    )
-
-
-    print(
-        "[SERVER HOP] Mencari Trade World server TERAMAI..."
-    )
-
-
-    print(
-        "[SERVER HOP] Syarat: belum penuh."
-    )
-
-
-    print(
-        "=========================================="
-    )
-
-
-    task.wait(
-        HOP_DELAY
-    )
-
-
-    local servers =
-        getPublicServers()
-
-
-    if #servers == 0 then
-
-        warn(
-            "[SERVER HOP] Tidak ada server Trade World tersedia."
-        )
-
-
-        blacklistTeleporting = false
-
-
-        return false
-
-    end
-
-
-    --====================================================--
-    -- SORT TERAMAI
-    --====================================================--
-
-    table.sort(
-        servers,
-        function(a, b)
-
-            return a.playing > b.playing
-
-        end
-    )
-
-
-    --====================================================--
-    -- DEBUG TOP 10
-    --====================================================--
-
-    print(
-        "=========================================="
-    )
-
-
-    print(
-        "[SERVER HOP] TOP 10 SERVER TRADE TERAMAI"
-    )
-
-
-    print(
-        "=========================================="
-    )
-
-
-    for i = 1, math.min(
-        10,
-        #servers
-    ) do
-
-        local server =
-            servers[i]
-
-
-        print(
-            i,
-            "| Players:",
-            server.playing,
-            "/",
-            server.maxPlayers,
-            "| JobId:",
-            server.id
-        )
-
-    end
-
-
-    --====================================================--
-    -- SELECT
-    --====================================================--
-
-    local targetServer =
-        getBusiestServer(
-            servers
-        )
-
-
-    if not targetServer then
-
-        warn(
-            "[SERVER HOP] Gagal memilih server."
-        )
-
-
-        blacklistTeleporting = false
-
-
-        return false
-
-    end
-
-
-    print(
-        "=========================================="
-    )
-
-
-    print(
-        "[SERVER HOP] SERVER TERPILIH"
-    )
-
-
-    print(
-        "[SERVER HOP] Players:",
-        targetServer.playing,
-        "/",
-        targetServer.maxPlayers
-    )
-
-
-    print(
-        "[SERVER HOP] JobId:",
-        targetServer.id
-    )
-
-
-    print(
-        "[SERVER HOP] Current JobId:",
-        game.JobId
-    )
-
-
-    print(
-        "=========================================="
-    )
-
-
-    --====================================================--
-    -- TELEPORT
-    --====================================================--
-
-    local success, err =
-        pcall(function()
-
-            TeleportService:TeleportToPlaceInstance(
-                TRADE_WORLD_ID,
-                targetServer.id,
-                LocalPlayer
-            )
-
-        end)
-
-
-    if not success then
-
-        warn(
-            "[SERVER HOP] TELEPORT ERROR:",
-            tostring(err)
-        )
-
-
-        blacklistTeleporting = false
-
-
-        return false
-
-    end
-
-
-    print(
-        "[SERVER HOP] Teleport request sent."
-    )
-
-
-    return true
-
-end
-
-
---========================================================--
--- TELEPORT FAILED DETECTOR
---========================================================--
-
-pcall(function()
-
-    TeleportService.TeleportInitFailed:Connect(
-        function(
-            player,
-            result,
-            message
-        )
-
-            if player == LocalPlayer then
-
-                warn(
-                    "[TELEPORT FAILED]",
-                    tostring(result),
-                    tostring(message)
-                )
-
-
-                blacklistTeleporting = false
-
-            end
-
-        end
-    )
-
-end)
-
-
---========================================================--
 -- PERYTON MONITOR
---========================================================--
--- LOOP TETAP:
--- Setiap 10 detik baca ulang kondisi terbaru.
---
--- BLACKLIST:
--- Nama player dicek dari table lokal setiap loop.
--- GitHub TIDAK dibaca ulang.
 --========================================================--
 
 local function startPerytonMonitor()
@@ -1895,7 +1795,8 @@ local function startPerytonMonitor()
 
 
             local inTradeWorld =
-                game.PlaceId == TRADE_WORLD_ID
+                game.PlaceId
+                == TRADE_WORLD_ID
 
 
             print(
@@ -1910,23 +1811,86 @@ local function startPerytonMonitor()
 
 
             --================================================--
+            -- TRADE WORLD
+            --================================================--
+
+            if inTradeWorld then
+
+                --================================================--
+                -- BLACKLIST
+                --================================================--
+
+                local badPlayer =
+                    isBlacklistedPlayerPresent()
+
+
+                if badPlayer then
+
+                    warn(
+                        "[MONITOR] BLACKLIST DETECTED:",
+                        badPlayer
+                    )
+
+                    warn(
+                        "[MONITOR] Blacklist hanya berlaku di Trade World."
+                    )
+
+                    warn(
+                        "[MONITOR] Teleporting ke server lain..."
+                    )
+
+
+                    hopToHighestServer()
+
+
+                    return
+
+                end
+
+
+                --================================================--
+                -- PERYTON CHECK
+                --================================================--
+
+                if currentPeryton
+                    < MIN_PERYTON then
+
+                    warn(
+                        "[MONITOR] Trade World + Peryton < "
+                        .. tostring(MIN_PERYTON)
+                    )
+
+
+                    kickPlayer(
+                        "Peryton habis di Trade World"
+                    )
+
+
+                    return
+
+                else
+
+                    print(
+                        "[MONITOR] Trade World + Peryton >= "
+                        .. tostring(MIN_PERYTON)
+                        .. " -> tetap."
+                    )
+
+                end
+
+
+            --================================================--
             -- MAIN WORLD
             --================================================--
 
-            if not inTradeWorld then
+            else
 
-                --================================================--
-                -- PERYTON ADA
-                --================================================--
-
-                if currentPeryton >= MIN_PERYTON then
+                if currentPeryton
+                    >= MIN_PERYTON then
 
                     print(
                         "[MONITOR] Main World + Peryton >= "
-                        .. tostring(
-                            MIN_PERYTON
-                        )
-                        .. " -> Trade World"
+                        .. tostring(MIN_PERYTON)
                     )
 
 
@@ -1934,10 +1898,6 @@ local function startPerytonMonitor()
 
 
                 else
-
-                    --================================================--
-                    -- PERYTON TIDAK ADA
-                    --================================================--
 
                     local requiredPresent =
                         isRequiredPlayerPresent()
@@ -1947,9 +1907,7 @@ local function startPerytonMonitor()
 
                         print(
                             "[MONITOR] Main World + Peryton < "
-                            .. tostring(
-                                MIN_PERYTON
-                            )
+                            .. tostring(MIN_PERYTON)
                             .. " + "
                             .. REQUIRED_PLAYER
                             .. " ADA -> tunggu."
@@ -1959,9 +1917,7 @@ local function startPerytonMonitor()
 
                         warn(
                             "[MONITOR] Main World + Peryton < "
-                            .. tostring(
-                                MIN_PERYTON
-                            )
+                            .. tostring(MIN_PERYTON)
                             .. " + "
                             .. REQUIRED_PLAYER
                             .. " TIDAK ADA."
@@ -1980,84 +1936,6 @@ local function startPerytonMonitor()
 
                 end
 
-
-            --================================================--
-            -- TRADE WORLD
-            --================================================--
-
-            else
-
-                --================================================--
-                -- BLACKLIST CHECK
-                --
-                -- HANYA DI TRADE WORLD
-                --================================================--
-
-                local badPlayer =
-                    isBlacklistedPlayerPresent()
-
-
-                if badPlayer then
-
-                    warn(
-                        "[MONITOR] BLACKLIST DETECTED:",
-                        badPlayer
-                    )
-
-
-                    print(
-                        "[MONITOR] Blacklist -> SERVER HOP"
-                    )
-
-
-                    teleportToNewTradeServer(
-                        "Blacklisted player: "
-                        .. tostring(
-                            badPlayer
-                        )
-                    )
-
-
-                    -- Jangan lanjut logic normal
-                    -- pada tick yang sama.
-                    continue
-
-                end
-
-
-                --================================================--
-                -- PERYTON CHECK
-                --================================================--
-
-                if currentPeryton < MIN_PERYTON then
-
-                    warn(
-                        "[MONITOR] Trade World + Peryton < "
-                        .. tostring(
-                            MIN_PERYTON
-                        )
-                    )
-
-
-                    kickPlayer(
-                        "Peryton habis di Trade World"
-                    )
-
-
-                    return
-
-                else
-
-                    print(
-                        "[MONITOR] Trade World + Peryton >= "
-                        .. tostring(
-                            MIN_PERYTON
-                        )
-                        .. " -> tetap."
-                    )
-
-                end
-
             end
 
         end
@@ -2068,10 +1946,46 @@ end
 
 
 --========================================================--
--- LOAD BLACKLIST
+-- TELEPORT FAILED DETECTOR
 --========================================================--
 
-loadBlacklistFromGitHub()
+pcall(function()
+
+    TeleportService.TeleportInitFailed:Connect(
+        function(
+            player,
+            result,
+            message
+        )
+
+            if player == LocalPlayer then
+
+                warn(
+                    "[TELEPORT FAILED]",
+                    tostring(result),
+                    tostring(message)
+                )
+
+                -- Boleh mencoba lagi
+                HopRunning = false
+
+            end
+
+        end
+    )
+
+end)
+
+
+--========================================================--
+-- LOAD BLACKLIST
+--
+-- Dibaca SEKALI ketika script mulai.
+-- Setelah itu pengecekan nama dilakukan
+-- langsung terhadap Player:GetPlayers().
+--========================================================--
+
+loadBlacklist()
 
 
 --========================================================--
@@ -2090,27 +2004,23 @@ local LocalPeryton =
 
 
 local InTradeWorld =
-    game.PlaceId == TRADE_WORLD_ID
+    game.PlaceId
+    == TRADE_WORLD_ID
 
 
 print(
     "================================================"
 )
 
-
 print(
     "[SYSTEM] Initial Peryton:",
     LocalPeryton
 )
 
-
 print(
     "[SYSTEM] PlaceId:",
-    tostring(
-        game.PlaceId
-    )
+    tostring(game.PlaceId)
 )
-
 
 print(
     "[SYSTEM] World:",
@@ -2119,36 +2029,32 @@ print(
     or "MAIN WORLD"
 )
 
-
 print(
     "[SYSTEM] Peryton monitor: EVERY 10 SECONDS"
 )
 
-
 print(
-    "[SYSTEM] Blacklist source: GitHub"
+    "[SYSTEM] Blacklist: GitHub"
 )
 
-
 print(
-    "[SYSTEM] Blacklist check: EVERY 10 SECONDS"
+    "[SYSTEM] Own username excluded:",
+    LocalPlayer.Name
 )
 
-
 print(
-    "[SYSTEM] Own username excluded: YES"
+    "[SYSTEM] Blacklist scope: TRADE WORLD ONLY"
 )
-
 
 print(
     "[SYSTEM] Blacklist action: SERVER HOP"
 )
 
-
 print(
-    "[SYSTEM] Hop target: BUSIEST NOT FULL"
+    "[SYSTEM] Hop target: BUSIEST <= "
+    .. tostring(MAX_TARGET_PLAYERS)
+    .. " PLAYERS"
 )
-
 
 print(
     "================================================"
@@ -2161,7 +2067,8 @@ print(
 
 if not InTradeWorld then
 
-    if LocalPeryton >= MIN_PERYTON then
+    if LocalPeryton
+        >= MIN_PERYTON then
 
         print(
             "[MAIN] Peryton >= 1 -> Trade World"
@@ -2188,7 +2095,6 @@ if not InTradeWorld then
                 .. " tidak ada di Main World"
             )
 
-
             return
 
         end
@@ -2196,7 +2102,6 @@ if not InTradeWorld then
     end
 
 
-    -- Monitor akan terus berjalan.
     return
 
 end
@@ -2215,33 +2120,26 @@ isTravelingToTrade = false
 
 
 --========================================================--
--- INITIAL BLACKLIST CHECK
+-- BLACKLIST CHECK
 --========================================================--
 
-local InitialBadPlayer =
+local badPlayer =
     isBlacklistedPlayerPresent()
 
 
-if InitialBadPlayer then
+if badPlayer then
 
     warn(
         "[TRADE] Blacklisted player detected:",
-        InitialBadPlayer
+        badPlayer
     )
-
 
     print(
-        "[TRADE] Blacklist -> SERVER HOP"
+        "[TRADE] Action -> SERVER HOP"
     )
 
 
-    teleportToNewTradeServer(
-        "Blacklisted player: "
-        .. tostring(
-            InitialBadPlayer
-        )
-    )
-
+    hopToHighestServer()
 
     return
 
@@ -2252,12 +2150,12 @@ end
 -- PERYTON SUDAH HABIS
 --========================================================--
 
-if LocalPeryton < MIN_PERYTON then
+if LocalPeryton
+    < MIN_PERYTON then
 
     kickPlayer(
         "Peryton habis di Trade World"
     )
-
 
     return
 
@@ -2274,10 +2172,10 @@ task.wait(
 
 
 --========================================================--
--- BLACKLIST CHECK LAGI
+-- BLACKLIST CHECK ULANG
 --========================================================--
 
-local badPlayer =
+badPlayer =
     isBlacklistedPlayerPresent()
 
 
@@ -2288,19 +2186,12 @@ if badPlayer then
         badPlayer
     )
 
-
     print(
-        "[TRADE] Blacklist -> SERVER HOP"
+        "[TRADE] Action -> SERVER HOP"
     )
 
 
-    teleportToNewTradeServer(
-        "Blacklisted player: "
-        .. tostring(
-            badPlayer
-        )
-    )
-
+    hopToHighestServer()
 
     return
 
@@ -2320,7 +2211,6 @@ if not boothSuccess then
     warn(
         "[TRADE] Booth claim failed."
     )
-
 
     return
 
@@ -2366,61 +2256,47 @@ print(
     "================================================"
 )
 
-
 print(
     "[SYSTEM READY]"
 )
-
 
 print(
     "Peryton Monitor : 10 seconds"
 )
 
-
 print(
-    "Blacklist Source: GitHub"
+    "Blacklist       : GitHub"
 )
-
-
-print(
-    "Blacklist Check : 10 seconds"
-)
-
 
 print(
     "Own Username    : EXCLUDED"
 )
 
-
 print(
     "Blacklist Scope : TRADE WORLD ONLY"
 )
-
 
 print(
     "Blacklist Action: SERVER HOP"
 )
 
-
 print(
-    "Hop Target      : BUSIEST NOT FULL"
+    "Hop Target      : BUSIEST <= "
+    .. tostring(MAX_TARGET_PLAYERS)
+    .. " PLAYERS"
 )
-
 
 print(
     "Keep Valid      : ON"
 )
 
-
 print(
     "Remove Invalid  : ON"
 )
 
-
 print(
     "Auto Listing    : ON"
 )
-
 
 print(
     "================================================"
