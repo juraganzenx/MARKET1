@@ -1,8 +1,10 @@
+--AUTOMARKET
 --========================================================--
 -- MARKET AUTO PERYTON
 -- AUTO TRADE WORLD + CLAIM BOOTH
 -- REMOVE INVALID LISTING + KEEP VALID LISTING
 -- AUTO LIST PERYTON
+-- AUTO JOBID FROM GITHUB
 --========================================================--
 
 --========================================================--
@@ -11,9 +13,10 @@
 
 local MIN_PERYTON = 1
 
--- Jika Peryton < 12, join server ini
--- Isi dengan JobId / Server Instance ID tujuan
-local TARGET_SERVER_JOB_ID = ""
+-- Jika Peryton < MIN_PERYTON,
+-- ambil JobId otomatis dari GitHub
+local JOBS_URL =
+    "https://raw.githubusercontent.com/juraganzenx/roblox-jobs/refs/heads/main/jobs.json"
 
 -- Trade World
 local TRADE_WORLD_ID = 129954712878723
@@ -77,12 +80,14 @@ local RemoveListing =
 local BoothReplication
 
 pcall(function()
+
     BoothReplication =
         require(
             ReplicatedStorage
                 :WaitForChild("Modules")
                 :WaitForChild("ReplicationReciever")
         ).new("Booths")
+
 end)
 
 --========================================================--
@@ -103,7 +108,9 @@ local function getPerytonCount()
 
     local count = 0
 
-    for _, tool in ipairs(Backpack:GetChildren()) do
+    for _, tool in ipairs(
+        Backpack:GetChildren()
+    ) do
 
         if tool:IsA("Tool") then
 
@@ -147,26 +154,138 @@ local function getPerytonCount()
 end
 
 --========================================================--
+-- GET JOBID FROM GITHUB
+--========================================================--
+
+local function getTargetJobId()
+
+    print(
+        "[JOBS] Mengambil jobs.json dari GitHub..."
+    )
+
+    local success, response =
+        pcall(function()
+
+            return game:HttpGet(
+                JOBS_URL
+            )
+
+        end)
+
+    if not success then
+
+        warn(
+            "[JOBS] Gagal mengambil jobs.json:",
+            response
+        )
+
+        return nil
+    end
+
+    local decodeSuccess, jobs =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                response
+            )
+
+        end)
+
+    if not decodeSuccess
+    or type(jobs) ~= "table" then
+
+        warn(
+            "[JOBS] Gagal decode jobs.json."
+        )
+
+        return nil
+    end
+
+    local currentPlaceId =
+        tonumber(game.PlaceId)
+
+    -- Jika ada beberapa JobId untuk PlaceId
+    -- yang sama, gunakan timestamp terbaru.
+    local latestJobId = nil
+    local latestTimestamp = -math.huge
+
+    for _, job in ipairs(jobs) do
+
+        if type(job) == "table"
+        and tonumber(job.placeId) == currentPlaceId
+        and job.jobId
+        and tostring(job.jobId) ~= "" then
+
+            local timestamp =
+                tonumber(job.timestamp) or 0
+
+            if timestamp >= latestTimestamp then
+
+                latestTimestamp = timestamp
+                latestJobId =
+                    tostring(job.jobId)
+
+            end
+        end
+    end
+
+    if latestJobId then
+
+        print(
+            "[JOBS] JobId ditemukan:",
+            latestJobId
+        )
+
+        print(
+            "[JOBS] PlaceId:",
+            tostring(currentPlaceId)
+        )
+
+        print(
+            "[JOBS] Timestamp:",
+            tostring(latestTimestamp)
+        )
+
+        return latestJobId
+    end
+
+    warn(
+        "[JOBS] JobId untuk PlaceId ini tidak ditemukan:",
+        tostring(currentPlaceId)
+    )
+
+    return nil
+end
+
+--========================================================--
 -- TELEPORT TARGET SERVER
 --========================================================--
 
 local function teleportToTargetServer()
 
-    if TARGET_SERVER_JOB_ID == "" then
+    local targetJobId =
+        getTargetJobId()
+
+    if not targetJobId then
 
         warn(
-            "[PERYTON] TARGET_SERVER_JOB_ID belum diisi."
+            "[PERYTON] JobId target tidak tersedia."
         )
 
         return false
     end
+
+    print(
+        "[PERYTON] Teleport ke JobId:",
+        targetJobId
+    )
 
     local success, err =
         pcall(function()
 
             TeleportService:TeleportToPlaceInstance(
                 game.PlaceId,
-                TARGET_SERVER_JOB_ID,
+                targetJobId,
                 LocalPlayer
             )
 
@@ -218,7 +337,9 @@ end
 -- GET BOOTH OWNER
 --========================================================--
 
-local function getBoothOwnerFromSurfaceGui(booth)
+local function getBoothOwnerFromSurfaceGui(
+    booth
+)
 
     for _, d in ipairs(
         booth:GetDescendants()
@@ -246,6 +367,7 @@ local function getBoothOwnerFromSurfaceGui(booth)
                         or lower:find("open") then
 
                             continue
+
                         end
 
                         if #txt >= 3
@@ -408,7 +530,9 @@ end
 -- GET PET WEIGHT FROM TOOL
 --========================================================--
 
-local function getWeight(toolName)
+local function getWeight(
+    toolName
+)
 
     local weight =
         toolName:match(
@@ -418,6 +542,7 @@ local function getWeight(toolName)
     if weight then
 
         return tonumber(weight)
+
     end
 
     return nil
@@ -644,7 +769,9 @@ end
 -- LIST PET
 --========================================================--
 
-local function listPet(tool)
+local function listPet(
+    tool
+)
 
     if not tool
     or not tool.Parent then
@@ -843,7 +970,7 @@ print(
 )
 
 --========================================================--
--- PERYTON < 12
+-- PERYTON < MIN_PERYTON
 --========================================================--
 
 if LocalPeryton < MIN_PERYTON then
@@ -862,7 +989,7 @@ if LocalPeryton < MIN_PERYTON then
 end
 
 --========================================================--
--- PERYTON >= 12
+-- PERYTON >= MIN_PERYTON
 --========================================================--
 
 print(
