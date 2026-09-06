@@ -1,0 +1,635 @@
+--TRADE TOKEN
+--// AUTO TRADE + AUTO ACCEPT + AUTO CONFIRM
+--// + SET TOKENS
+--// + STATUS GUI
+--//
+--// AUTO START
+--//
+--// GIFT:
+--// -> ACCEPT GIFT NOTIFICATION LAMA
+--// -> ACCEPT GIFT NOTIFICATION BARU
+--//
+--// TRADE:
+--// -> TIDAK PERLU PILIH PET
+--// -> SET TOKENS 9999
+--// -> WAIT 0.5
+--// -> ACCEPT
+--// -> WAIT 0.5
+--// -> CONFIRM
+--//==================================================
+
+
+-- ================= CONFIG =================
+
+local TRADE_LOOP_DELAY = 1
+local ACCEPT_DELAY = 0.5
+local ADD_PET_DELAY = 0.15
+local MAX_PETS = 12
+
+local TRADE_TOKENS = 9999
+
+
+-- Kosong = tidak memasukkan pet.
+-- Trade tetap melakukan SetTokens + Accept + Confirm.
+local selectedPets = {}
+
+
+-- ================= SERVICES =================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local GuiService = game:GetService("GuiService")
+local VirtualInputManager =
+    game:GetService("VirtualInputManager")
+
+local player = Players.LocalPlayer
+
+local playerGui =
+    player:WaitForChild("PlayerGui")
+
+local backpack =
+    player:WaitForChild("Backpack")
+
+local GameEvents =
+    ReplicatedStorage:WaitForChild("GameEvents")
+
+
+-- ==================================================
+-- TRADE EVENTS
+-- ==================================================
+
+local tradeEvents =
+    GameEvents:WaitForChild("TradeEvents")
+
+local addItemEvent =
+    tradeEvents:WaitForChild("AddItem")
+
+local setTokensEvent =
+    tradeEvents:WaitForChild("SetTokens")
+
+local acceptEvent =
+    tradeEvents:WaitForChild("Accept")
+
+local confirmEvent =
+    tradeEvents:WaitForChild("Confirm")
+
+
+-- ==================================================
+-- GLOBAL FLAGS
+-- ==================================================
+
+local autoAcceptRunning = true
+
+
+-- ==================================================
+-- STATUS GUI
+-- ==================================================
+
+local function createStatusGUI()
+
+    local oldGui =
+        playerGui:FindFirstChild(
+            "AutoScriptStatus"
+        )
+
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "AutoScriptStatus"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        false
+
+    gui.Parent =
+        playerGui
+
+
+    -- ================= FRAME =================
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Size =
+        UDim2.new(
+            0,
+            190,
+            0,
+            42
+        )
+
+    -- KANAN ATAS
+    -- Tidak terlalu mepet atas
+    frame.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    frame.Position =
+        UDim2.new(
+            1,
+            -15,
+            0,
+            45
+        )
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(
+            25,
+            25,
+            25
+        )
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        gui
+
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            8
+        )
+
+    corner.Parent =
+        frame
+
+
+    -- ================= STATUS =================
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Size =
+        UDim2.new(
+            1,
+            0,
+            1,
+            0
+        )
+
+    status.BackgroundTransparency =
+        1
+
+    status.Text =
+        "🟢 SCRIPT ACTIVE"
+
+    status.TextColor3 =
+        Color3.fromRGB(
+            80,
+            255,
+            100
+        )
+
+    status.TextSize =
+        16
+
+    status.Font =
+        Enum.Font.GothamBold
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    status.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    status.Parent =
+        frame
+
+end
+
+
+-- ==================================================
+-- AUTO ACCEPT GIFT
+--
+-- ACCEPT:
+-- 1. NOTIFICATION YANG SUDAH ADA
+-- 2. NOTIFICATION BARU
+-- ==================================================
+
+local function startGiftAutoAccept()
+
+    local giftNotif =
+        playerGui:WaitForChild(
+            "Gift_Notification"
+        )
+
+
+    -- ==================================================
+    -- CHECK ACCEPT BUTTON
+    -- ==================================================
+
+    local function isAcceptButton(btn)
+
+        if not (
+            btn:IsA("TextButton")
+            or
+            btn:IsA("ImageButton")
+        ) then
+
+            return false
+
+        end
+
+
+        if not btn.Visible then
+            return false
+        end
+
+
+        local text = ""
+
+
+        if btn:IsA("TextButton") then
+
+            text =
+                string.lower(
+                    btn.Text
+                )
+
+        end
+
+
+        local name =
+            string.lower(
+                btn.Name
+            )
+
+
+        return
+            string.find(
+                text,
+                "accept"
+            )
+            or
+            string.find(
+                name,
+                "accept"
+            )
+
+    end
+
+
+    -- ==================================================
+    -- CLICK ACCEPT
+    -- ==================================================
+
+    local function clickAccept(btn)
+
+        task.spawn(function()
+
+            if not autoAcceptRunning then
+                return
+            end
+
+
+            task.wait(0.1)
+
+
+            if not btn then
+                return
+            end
+
+
+            if not btn.Parent then
+                return
+            end
+
+
+            if not btn.Visible then
+                return
+            end
+
+
+            GuiService.SelectedObject =
+                btn
+
+
+            task.wait(0.05)
+
+
+            VirtualInputManager:SendKeyEvent(
+                true,
+                Enum.KeyCode.Return,
+                false,
+                game
+            )
+
+
+            VirtualInputManager:SendKeyEvent(
+                false,
+                Enum.KeyCode.Return,
+                false,
+                game
+            )
+
+
+            task.wait(0.05)
+
+
+            GuiService.SelectedObject =
+                nil
+
+        end)
+
+    end
+
+
+    -- ==================================================
+    -- CHECK OBJECT
+    -- ==================================================
+
+    local function tryHandle(obj)
+
+        if not autoAcceptRunning then
+            return
+        end
+
+
+        -- Object itu sendiri adalah Accept
+        if isAcceptButton(obj) then
+
+            clickAccept(obj)
+
+            return
+
+        end
+
+
+        -- Cari Accept di dalam object
+        if obj.GetDescendants then
+
+            for _, child in ipairs(
+                obj:GetDescendants()
+            ) do
+
+                if isAcceptButton(child) then
+
+                    clickAccept(child)
+
+                end
+
+            end
+
+        end
+
+    end
+
+
+    -- ==================================================
+    -- HANDLE GIFT YANG SUDAH ADA
+    -- ==================================================
+
+    for _, obj in ipairs(
+        giftNotif:GetDescendants()
+    ) do
+
+        tryHandle(obj)
+
+    end
+
+
+    -- ==================================================
+    -- HANDLE GIFT BARU
+    -- ==================================================
+
+    giftNotif.DescendantAdded:Connect(
+        function(desc)
+
+            if not autoAcceptRunning then
+                return
+            end
+
+
+            -- Beri waktu UI selesai dibuat
+            task.wait(0.05)
+
+
+            tryHandle(desc)
+
+        end
+    )
+
+end
+
+
+-- ==================================================
+-- GET SELECTED PET UUID
+-- ==================================================
+
+local function getSelectedPetUUIDs()
+
+    local petsList = {}
+
+    local count = 0
+
+
+    -- Tidak ada pet yang dipilih
+    if #selectedPets == 0 then
+
+        return petsList
+
+    end
+
+
+    for _, tool in ipairs(
+        backpack:GetChildren()
+    ) do
+
+        if tool:IsA("Tool") then
+
+            local petName =
+                tool:GetAttribute("f")
+
+            local uuid =
+                tool:GetAttribute(
+                    "PET_UUID"
+                )
+
+
+            if
+                uuid
+                and petName
+                and table.find(
+                    selectedPets,
+                    petName
+                )
+            then
+
+                table.insert(
+                    petsList,
+                    uuid
+                )
+
+
+                count += 1
+
+
+                if count >= MAX_PETS then
+                    break
+                end
+
+            end
+
+        end
+
+    end
+
+
+    return petsList
+
+end
+
+
+-- ==================================================
+-- AUTO TRADE
+-- ==================================================
+
+local function startAutoTrade()
+
+    task.spawn(function()
+
+        task.wait(1)
+
+
+        while true do
+
+            if autoAcceptRunning then
+
+                -- ==================================
+                -- GET PET
+                -- ==================================
+
+                local petsList =
+                    getSelectedPetUUIDs()
+
+
+                -- ==================================
+                -- ADD PET
+                -- ==================================
+
+                if #petsList > 0 then
+
+                    for _, uuid in ipairs(
+                        petsList
+                    ) do
+
+                        addItemEvent:FireServer(
+                            "Pet",
+                            uuid
+                        )
+
+
+                        task.wait(
+                            ADD_PET_DELAY
+                        )
+
+                    end
+
+                end
+
+
+                -- ==================================
+                -- SET TOKENS
+                -- ==================================
+
+                setTokensEvent:FireServer(
+                    TRADE_TOKENS
+                )
+
+
+                -- ==================================
+                -- WAIT 0.5
+                -- ==================================
+
+                task.wait(
+                    6
+                )
+
+
+                -- ==================================
+                -- ACCEPT TRADE
+                -- ==================================
+
+                acceptEvent:FireServer()
+
+
+                -- ==================================
+                -- WAIT 0.5
+                -- ==================================
+
+                task.wait(
+                    0.5
+                )
+
+
+                -- ==================================
+                -- CONFIRM TRADE
+                -- ==================================
+
+                confirmEvent:FireServer()
+
+            end
+
+
+            -- ======================================
+            -- LOOP DELAY
+            -- ======================================
+
+            task.wait(
+                TRADE_LOOP_DELAY
+            )
+
+        end
+
+    end)
+
+end
+
+
+-- ==================================================
+-- AUTO START
+-- ==================================================
+
+task.spawn(function()
+
+    -- Tunggu game siap
+    task.wait(2)
+
+
+    -- ==============================================
+    -- STATUS GUI
+    -- ==============================================
+
+    createStatusGUI()
+
+
+    -- ==============================================
+    -- AUTO ACCEPT GIFT
+    -- ==============================================
+
+    startGiftAutoAccept()
+
+
+    -- ==============================================
+    -- AUTO TRADE
+    -- ==============================================
+
+    startAutoTrade()
+
+end)
