@@ -1,17 +1,23 @@
---AUTOMARKETa
+--AUTOMARKET
 --========================================================--
 -- MARKET AUTO PERYTON
 -- AUTO TRADE WORLD + CLAIM BOOTH
 -- REMOVE INVALID LISTING + KEEP VALID LISTING
 -- AUTO LIST PERYTON
 --
--- FLOW BARU:
--- 1. Peryton < 1 + Trade World  -> KICK
--- 2. Peryton < 1 + Main World
---      -> jika asepppy38 ADA     -> lanjut
---      -> jika asepppy38 TIDAK ADA -> KICK
--- 3. Peryton >= 1               -> Trade World
+-- PERYTON MONITOR:
+-- MAIN WORLD:
+--   PERYTON >= 1 -> TRADE WORLD
+--   PERYTON < 1 + asepppy38 ADA -> TUNGGU
+--   PERYTON < 1 + asepppy38 TIDAK ADA -> KICK
+--
+-- TRADE WORLD:
+--   PERYTON >= 1 -> TETAP + AUTO LIST
+--   PERYTON < 1 -> KICK
+--
+-- PERYTON SELALU DICEK ULANG SETIAP 10 DETIK
 --========================================================--
+
 
 --========================================================--
 -- CONFIG
@@ -19,7 +25,8 @@
 
 local MIN_PERYTON = 1
 
--- Player yang harus ada di Main World
+-- Player yang harus ada ketika Peryton < 1
+-- di Main World
 local REQUIRED_PLAYER = "asepppy38"
 
 -- Trade World
@@ -36,53 +43,83 @@ local TRADE_WAIT = 3
 local CLAIM_TIMEOUT = 5
 local LIST_START_DELAY = 5
 local REMOVE_DELAY = 0.2
+
+-- Auto Listing scan
 local SCAN_DELAY = 60
+
+-- Peryton monitor
+local PERYTON_CHECK_DELAY = 10
+
 
 --========================================================--
 -- SERVICES
 --========================================================--
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players =
+    game:GetService("Players")
 
-local LocalPlayer = Players.LocalPlayer
-local Backpack = LocalPlayer:WaitForChild("Backpack")
+local ReplicatedStorage =
+    game:GetService("ReplicatedStorage")
+
+
+local LocalPlayer =
+    Players.LocalPlayer
+
+local Backpack =
+    LocalPlayer:WaitForChild("Backpack")
+
 
 --========================================================--
 -- REMOTES
 --========================================================--
 
 local GameEvents =
-    ReplicatedStorage:WaitForChild("GameEvents")
+    ReplicatedStorage:WaitForChild(
+        "GameEvents"
+    )
+
 
 local TradeWorldFolder =
-    GameEvents:WaitForChild("TradeWorld")
+    GameEvents:WaitForChild(
+        "TradeWorld"
+    )
+
 
 local TradeEvents =
-    GameEvents:WaitForChild("TradeEvents")
+    GameEvents:WaitForChild(
+        "TradeEvents"
+    )
+
 
 local Booths =
-    TradeEvents:WaitForChild("Booths")
+    TradeEvents:WaitForChild(
+        "Booths"
+    )
+
 
 local travelEventToTrade =
     TradeWorldFolder:WaitForChild(
         "TravelToTradeWorld"
     )
 
+
 local claimBoothEvent =
     Booths:WaitForChild(
         "ClaimBooth"
     )
+
 
 local CreateListing =
     Booths:WaitForChild(
         "CreateListing"
     )
 
+
 local RemoveListing =
     Booths:WaitForChild(
         "RemoveListing"
     )
+
 
 --========================================================--
 -- BOOTH REPLICATION
@@ -101,21 +138,44 @@ pcall(function()
 
 end)
 
+
 --========================================================--
 -- BLACKLIST
 --========================================================--
 
 local blacklist = {
+
     ["Ochil_28"] = true,
+
     ["setokmimic"] = true,
+
     ["CihuyyXuhuyyy11"] = true
+
 }
+
+
+--========================================================--
+-- STATE
+--========================================================--
+
+local isKicked = false
+
+local isTravelingToTrade = false
+
+local autoListingStarted = false
+
 
 --========================================================--
 -- KICK
 --========================================================--
 
 local function kickPlayer(reason)
+
+    if isKicked then
+        return
+    end
+
+    isKicked = true
 
     warn(
         "[KICK]",
@@ -132,25 +192,6 @@ local function kickPlayer(reason)
 
 end
 
---========================================================--
--- CHECK REQUIRED PLAYER
---========================================================--
-
-local function isRequiredPlayerPresent()
-
-    for _, player in ipairs(
-        Players:GetPlayers()
-    ) do
-
-        if player.Name == REQUIRED_PLAYER then
-
-            return true
-        end
-
-    end
-
-    return false
-end
 
 --========================================================--
 -- GET PERYTON COUNT
@@ -160,7 +201,11 @@ local function getPerytonCount()
 
     local count = 0
 
-    -- Backpack
+
+    --====================================================--
+    -- BACKPACK
+    --====================================================--
+
     for _, tool in ipairs(
         Backpack:GetChildren()
     ) do
@@ -182,7 +227,11 @@ local function getPerytonCount()
 
     end
 
-    -- Character
+
+    --====================================================--
+    -- CHARACTER
+    --====================================================--
+
     if LocalPlayer.Character then
 
         for _, tool in ipairs(
@@ -208,8 +257,34 @@ local function getPerytonCount()
 
     end
 
+
     return count
+
 end
+
+
+--========================================================--
+-- REQUIRED PLAYER CHECK
+--========================================================--
+
+local function isRequiredPlayerPresent()
+
+    for _, player in ipairs(
+        Players:GetPlayers()
+    ) do
+
+        if player.Name == REQUIRED_PLAYER then
+
+            return true
+
+        end
+
+    end
+
+    return false
+
+end
+
 
 --========================================================--
 -- BLACKLIST CHECK
@@ -234,7 +309,68 @@ local function isBlacklistedPlayerPresent()
     end
 
     return nil
+
 end
+
+
+--========================================================--
+-- TRAVEL TO TRADE WORLD
+--========================================================--
+
+local function travelToTradeWorld()
+
+    if isTravelingToTrade then
+        return false
+    end
+
+    if game.PlaceId == TRADE_WORLD_ID then
+        return true
+    end
+
+
+    isTravelingToTrade = true
+
+
+    print(
+        "[TRADE] Peryton detected."
+    )
+
+    print(
+        "[TRADE] Traveling to Trade World..."
+    )
+
+
+    local success, err =
+        pcall(function()
+
+            travelEventToTrade:FireServer()
+
+        end)
+
+
+    if not success then
+
+        warn(
+            "[TRADE] Travel failed:",
+            err
+        )
+
+        isTravelingToTrade = false
+
+        return false
+
+    end
+
+
+    print(
+        "[TRADE] Travel request sent."
+    )
+
+
+    return true
+
+end
+
 
 --========================================================--
 -- GET BOOTH OWNER
@@ -256,13 +392,16 @@ local function getBoothOwnerFromSurfaceGui(
 
                 if g:IsA("TextLabel") then
 
-                    local txt = g.Text
+                    local txt =
+                        g.Text
+
 
                     if txt
                     and txt ~= "" then
 
                         local lower =
                             txt:lower()
+
 
                         if lower:find("claim")
                         or lower:find("rent")
@@ -273,6 +412,7 @@ local function getBoothOwnerFromSurfaceGui(
                             continue
 
                         end
+
 
                         if #txt >= 3
                         and #txt <= 20 then
@@ -291,8 +431,11 @@ local function getBoothOwnerFromSurfaceGui(
 
     end
 
+
     return "Unclaimed"
+
 end
+
 
 --========================================================--
 -- WAIT CLAIM
@@ -305,6 +448,7 @@ local function waitForClaim(
 
     local elapsed = 0
 
+
     while elapsed < timeout do
 
         local owner =
@@ -312,11 +456,13 @@ local function waitForClaim(
                 booth
             )
 
+
         if owner ~= "Unclaimed" then
 
             return true
 
         end
+
 
         task.wait(0.5)
 
@@ -324,8 +470,11 @@ local function waitForClaim(
 
     end
 
+
     return false
+
 end
+
 
 --========================================================--
 -- FIND EMPTY BOOTH
@@ -338,10 +487,12 @@ local function getValidBooth()
             "TradeWorld"
         )
 
+
     local booths =
         tradeWorld:WaitForChild(
             "Booths"
         )
+
 
     for _, booth in ipairs(
         booths:GetChildren()
@@ -354,6 +505,7 @@ local function getValidBooth()
 
             end)
 
+
         if success
         and position then
 
@@ -361,6 +513,7 @@ local function getValidBooth()
                 getBoothOwnerFromSurfaceGui(
                     booth
                 )
+
 
             if position.Y < 1
             and owner == "Unclaimed" then
@@ -373,8 +526,11 @@ local function getValidBooth()
 
     end
 
+
     return nil
+
 end
+
 
 --========================================================--
 -- CLAIM BOOTH
@@ -385,6 +541,7 @@ local function claimBooth()
     local booth =
         getValidBooth()
 
+
     if not booth then
 
         warn(
@@ -392,12 +549,15 @@ local function claimBooth()
         )
 
         return false
+
     end
+
 
     print(
         "[BOOTH] Trying to claim:",
         booth.Name
     )
+
 
     local success, err =
         pcall(function()
@@ -408,6 +568,7 @@ local function claimBooth()
 
         end)
 
+
     if not success then
 
         warn(
@@ -416,13 +577,16 @@ local function claimBooth()
         )
 
         return false
+
     end
+
 
     local claimed =
         waitForClaim(
             booth,
             CLAIM_TIMEOUT
         )
+
 
     if claimed then
 
@@ -435,12 +599,16 @@ local function claimBooth()
 
     end
 
+
     warn(
         "[BOOTH] Claim gagal."
     )
 
+
     return false
+
 end
+
 
 --========================================================--
 -- GET PET WEIGHT
@@ -455,14 +623,18 @@ local function getWeight(
             "%[(%d+%.?%d*)%s*KG%]"
         )
 
+
     if weight then
 
         return tonumber(weight)
 
     end
 
+
     return nil
+
 end
+
 
 --========================================================--
 -- CONFIG MATCH
@@ -478,6 +650,7 @@ local function matchesTarget(
         return false
     end
 
+
     if not string.find(
         petName,
         TARGET_NAME,
@@ -486,24 +659,32 @@ local function matchesTarget(
     ) then
 
         return false
+
     end
+
 
     if not weight then
         return false
     end
 
+
     if weight < MIN_KG then
         return false
     end
+
 
     if price ~= nil
     and price ~= PRICE then
 
         return false
+
     end
 
+
     return true
+
 end
+
 
 --========================================================--
 -- GET BOOTH DATA
@@ -518,7 +699,9 @@ local function getBoothData()
         )
 
         return nil
+
     end
+
 
     local success, data =
         pcall(function()
@@ -526,6 +709,7 @@ local function getBoothData()
             return BoothReplication:GetDataAsync()
 
         end)
+
 
     if not success then
 
@@ -535,10 +719,14 @@ local function getBoothData()
         )
 
         return nil
+
     end
 
+
     return data
+
 end
+
 
 --========================================================--
 -- REMOVE INVALID LISTINGS
@@ -550,8 +738,10 @@ local function removeInvalidListings()
         "[REMOVE] Reading booth data..."
     )
 
+
     local data =
         getBoothData()
+
 
     if not data then
 
@@ -560,7 +750,9 @@ local function removeInvalidListings()
         )
 
         return
+
     end
+
 
     local playerKey =
         "Player_" ..
@@ -568,9 +760,11 @@ local function removeInvalidListings()
             LocalPlayer.UserId
         )
 
+
     local playerData =
         data.Players
         and data.Players[playerKey]
+
 
     if not playerData then
 
@@ -579,10 +773,13 @@ local function removeInvalidListings()
         )
 
         return
+
     end
+
 
     local listings =
         playerData.Listings
+
 
     if not listings then
 
@@ -591,14 +788,18 @@ local function removeInvalidListings()
         )
 
         return
+
     end
+
 
     local items =
         playerData.Items or {}
 
+
     local checked = 0
     local kept = 0
     local removed = 0
+
 
     for listingId, listing in pairs(
         listings
@@ -606,23 +807,29 @@ local function removeInvalidListings()
 
         checked += 1
 
+
         local item =
             items[listing.ItemId]
+
 
         local petType =
             item
             and item.PetType
 
+
         local petData =
             item
             and item.PetData
+
 
         local baseWeight =
             petData
             and petData.BaseWeight
 
+
         local price =
             listing.Price
+
 
         local valid =
             matchesTarget(
@@ -631,9 +838,11 @@ local function removeInvalidListings()
                 price
             )
 
+
         if valid then
 
             kept += 1
+
 
             print(
                 string.format(
@@ -644,9 +853,11 @@ local function removeInvalidListings()
                 )
             )
 
+
         else
 
             removed += 1
+
 
             print(
                 string.format(
@@ -657,6 +868,7 @@ local function removeInvalidListings()
                 )
             )
 
+
             pcall(function()
 
                 RemoveListing:InvokeServer(
@@ -664,6 +876,7 @@ local function removeInvalidListings()
                 )
 
             end)
+
 
             task.wait(
                 REMOVE_DELAY
@@ -673,6 +886,7 @@ local function removeInvalidListings()
 
     end
 
+
     print(
         string.format(
             "[REMOVE DONE] Checked=%d | Keep=%d | Removed=%d",
@@ -681,7 +895,9 @@ local function removeInvalidListings()
             removed
         )
     )
+
 end
+
 
 --========================================================--
 -- LIST PET
@@ -695,12 +911,15 @@ local function listPet(
     or not tool.Parent then
 
         return false
+
     end
+
 
     local uuid =
         tool:GetAttribute(
             "PET_UUID"
         )
+
 
     if not uuid then
 
@@ -710,13 +929,20 @@ local function listPet(
         )
 
         return false
+
     end
 
+
     local args = {
+
         [1] = "Pet",
+
         [2] = uuid,
+
         [3] = PRICE
+
     }
+
 
     local success, result =
         pcall(function()
@@ -726,6 +952,7 @@ local function listPet(
             )
 
         end)
+
 
     if success then
 
@@ -741,6 +968,7 @@ local function listPet(
             )
         )
 
+
         return true
 
     else
@@ -750,9 +978,13 @@ local function listPet(
             result
         )
 
+
         return false
+
     end
+
 end
+
 
 --========================================================--
 -- FIND PERYTON FOR LISTING
@@ -761,6 +993,7 @@ end
 local function getListingCandidates()
 
     local candidates = {}
+
 
     for _, tool in ipairs(
         Backpack:GetChildren()
@@ -780,6 +1013,7 @@ local function getListingCandidates()
                         tool.Name
                     )
 
+
                 if weight
                 and weight >= MIN_KG then
 
@@ -796,8 +1030,11 @@ local function getListingCandidates()
 
     end
 
+
     return candidates
+
 end
+
 
 --========================================================--
 -- AUTO LIST
@@ -805,52 +1042,59 @@ end
 
 local function startAutoListing()
 
+    if autoListingStarted then
+        return
+    end
+
+
+    autoListingStarted = true
+
+
     print(
         "[AUTO LISTER] Waiting",
         LIST_START_DELAY,
         "seconds..."
     )
 
+
     task.wait(
         LIST_START_DELAY
     )
 
+
     while true do
 
         --================================================--
-        -- CEK PERYTON SETIAP LOOP
+        -- SAFETY CHECK
         --================================================--
 
-        local currentPeryton =
-            getPerytonCount()
-
-        print(
-            "[AUTO LISTER] Current Peryton:",
-            currentPeryton
-        )
-
-        -- Jika Peryton habis saat sudah di Trade World
-        -- langsung kick.
-        if currentPeryton < MIN_PERYTON then
-
-            kickPlayer(
-                "Peryton habis di Trade World"
-            )
-
+        if isKicked then
             return
         end
 
-        --================================================--
-        -- SCAN LISTING
-        --================================================--
+
+        -- Jika ternyata kembali ke Main World,
+        -- hentikan Auto Listing.
+        if game.PlaceId ~= TRADE_WORLD_ID then
+
+            warn(
+                "[AUTO LISTER] Tidak berada di Trade World."
+            )
+
+            return
+
+        end
+
 
         local candidates =
             getListingCandidates()
+
 
         print(
             "[AUTO LISTER] Found:",
             #candidates
         )
+
 
         if #candidates == 0 then
 
@@ -860,27 +1104,21 @@ local function startAutoListing()
 
         end
 
+
         for _, tool in ipairs(
             candidates
         ) do
 
+            if isKicked then
+                return
+            end
+
+
             if tool
             and tool.Parent == Backpack then
 
-                -- Cek lagi sebelum listing
-                local countNow =
-                    getPerytonCount()
-
-                if countNow < MIN_PERYTON then
-
-                    kickPlayer(
-                        "Peryton habis sebelum listing"
-                    )
-
-                    return
-                end
-
                 listPet(tool)
+
 
                 task.wait(
                     PER_ITEM_DELAY
@@ -890,172 +1128,324 @@ local function startAutoListing()
 
         end
 
+
         task.wait(
             SCAN_DELAY
         )
 
     end
+
 end
 
+
 --========================================================--
--- MAIN FLOW
+-- PERYTON MONITOR
+--========================================================--
+-- LOOP TETAP:
+-- Setiap 10 detik baca ulang kondisi terbaru.
+--========================================================--
+
+local function startPerytonMonitor()
+
+    task.spawn(function()
+
+        while true do
+
+            task.wait(
+                PERYTON_CHECK_DELAY
+            )
+
+
+            if isKicked then
+                return
+            end
+
+
+            local currentPeryton =
+                getPerytonCount()
+
+
+            local inTradeWorld =
+                game.PlaceId == TRADE_WORLD_ID
+
+
+            print(
+                string.format(
+                    "[MONITOR] Peryton=%d | World=%s",
+                    currentPeryton,
+                    inTradeWorld
+                    and "TRADE"
+                    or "MAIN"
+                )
+            )
+
+
+            --================================================--
+            -- MAIN WORLD
+            --================================================--
+
+            if not inTradeWorld then
+
+                -- Peryton >= 1
+                -- langsung menuju Trade World.
+                if currentPeryton >= MIN_PERYTON then
+
+                    print(
+                        "[MONITOR] Main World + Peryton >= "
+                        .. tostring(MIN_PERYTON)
+                    )
+
+
+                    travelToTradeWorld()
+
+
+                else
+
+                    -- Peryton < 1
+                    -- cek apakah asepppy38 ada.
+                    local requiredPresent =
+                        isRequiredPlayerPresent()
+
+
+                    if requiredPresent then
+
+                        print(
+                            "[MONITOR] Main World + Peryton < "
+                            .. tostring(MIN_PERYTON)
+                            .. " + "
+                            .. REQUIRED_PLAYER
+                            .. " ADA -> tunggu."
+                        )
+
+                    else
+
+                        warn(
+                            "[MONITOR] Main World + Peryton < "
+                            .. tostring(MIN_PERYTON)
+                            .. " + "
+                            .. REQUIRED_PLAYER
+                            .. " TIDAK ADA."
+                        )
+
+
+                        kickPlayer(
+                            REQUIRED_PLAYER
+                            .. " tidak ada di Main World"
+                        )
+
+
+                        return
+
+                    end
+
+                end
+
+
+            --================================================--
+            -- TRADE WORLD
+            --================================================--
+
+            else
+
+                if currentPeryton < MIN_PERYTON then
+
+                    warn(
+                        "[MONITOR] Trade World + Peryton < "
+                        .. tostring(MIN_PERYTON)
+                    )
+
+
+                    kickPlayer(
+                        "Peryton habis di Trade World"
+                    )
+
+
+                    return
+
+                else
+
+                    print(
+                        "[MONITOR] Trade World + Peryton >= "
+                        .. tostring(MIN_PERYTON)
+                        .. " -> tetap."
+                    )
+
+                end
+
+            end
+
+        end
+
+    end)
+
+end
+
+
+--========================================================--
+-- TELEPORT FAILED DETECTOR
+--========================================================--
+
+pcall(function()
+
+    local TeleportService =
+        game:GetService(
+            "TeleportService"
+        )
+
+
+    TeleportService.TeleportInitFailed:Connect(
+        function(
+            player,
+            result,
+            message
+        )
+
+            if player == LocalPlayer then
+
+                warn(
+                    "[TELEPORT FAILED]",
+                    tostring(result),
+                    tostring(message)
+                )
+
+            end
+
+        end
+    )
+
+end)
+
+
+--========================================================--
+-- START MONITOR
+--========================================================--
+
+startPerytonMonitor()
+
+
+--========================================================--
+-- INITIAL CHECK
 --========================================================--
 
 local LocalPeryton =
     getPerytonCount()
 
+
 local InTradeWorld =
     game.PlaceId == TRADE_WORLD_ID
+
 
 print(
     "================================================"
 )
 
 print(
-    "[PERYTON] Current count:",
+    "[SYSTEM] Initial Peryton:",
     LocalPeryton
 )
 
 print(
-    "[WORLD] PlaceId:",
+    "[SYSTEM] PlaceId:",
     tostring(game.PlaceId)
 )
 
 print(
-    "[WORLD] Trade World:",
-    tostring(InTradeWorld)
+    "[SYSTEM] World:",
+    InTradeWorld
+    and "TRADE WORLD"
+    or "MAIN WORLD"
 )
 
 print(
-    "[CHECK] Required Player:",
-    REQUIRED_PLAYER
+    "[SYSTEM] Peryton monitor: EVERY 10 SECONDS"
 )
 
 print(
     "================================================"
 )
 
---========================================================--
--- CASE 1
--- PERYTON < 1 + TRADE WORLD
---========================================================--
-
-if LocalPeryton < MIN_PERYTON
-and InTradeWorld then
-
-    warn(
-        "[PERYTON] Peryton <",
-        MIN_PERYTON,
-        "dan sudah di Trade World."
-    )
-
-    kickPlayer(
-        "Peryton habis di Trade World"
-    )
-
-    return
-end
 
 --========================================================--
--- CASE 2
--- PERYTON < 1 + MAIN WORLD
---========================================================--
-
-if LocalPeryton < MIN_PERYTON
-and not InTradeWorld then
-
-    print(
-        "[PERYTON] Peryton <",
-        MIN_PERYTON,
-        "di Main World."
-    )
-
-    local requiredPresent =
-        isRequiredPlayerPresent()
-
-    if not requiredPresent then
-
-        warn(
-            "[MAIN WORLD] Player",
-            REQUIRED_PLAYER,
-            "tidak ditemukan."
-        )
-
-        kickPlayer(
-            REQUIRED_PLAYER ..
-            " tidak ada di Main World"
-        )
-
-        return
-
-    end
-
-    print(
-        "[MAIN WORLD] Player",
-        REQUIRED_PLAYER,
-        "ditemukan."
-    )
-
-    print(
-        "[MAIN WORLD] Tetap di server."
-    )
-
-    return
-end
-
---========================================================--
--- CASE 3
--- PERYTON >= 1
---========================================================--
-
-print(
-    "[PERYTON]",
-    LocalPeryton,
-    ">=",
-    MIN_PERYTON,
-    "→ lanjut Trade World."
-)
-
---========================================================--
--- MAIN PLACE → TRADE WORLD
+-- INITIAL MAIN WORLD LOGIC
 --========================================================--
 
 if not InTradeWorld then
 
-    print(
-        "[TRADE] Moving to Trade World..."
-    )
+    if LocalPeryton >= MIN_PERYTON then
 
-    local success, err =
-        pcall(function()
-
-            travelEventToTrade:FireServer()
-
-        end)
-
-    if not success then
-
-        warn(
-            "[TRADE] Travel failed:",
-            err
+        print(
+            "[MAIN] Peryton >= 1 -> Trade World"
         )
+
+
+        travelToTradeWorld()
+
+
+    else
+
+        if isRequiredPlayerPresent() then
+
+            print(
+                "[MAIN] Peryton < 1 + "
+                .. REQUIRED_PLAYER
+                .. " ADA -> menunggu."
+            )
+
+        else
+
+            kickPlayer(
+                REQUIRED_PLAYER
+                .. " tidak ada di Main World"
+            )
+
+            return
+
+        end
 
     end
 
+
+    -- Monitor akan menangani pengecekan berikutnya.
     return
+
 end
 
+
 --========================================================--
--- ALREADY IN TRADE WORLD
+-- INITIAL TRADE WORLD LOGIC
 --========================================================--
 
 print(
     "[TRADE] Already in Trade World."
 )
 
+
+isTravelingToTrade = false
+
+
+--========================================================--
+-- PERYTON SUDAH HABIS
+--========================================================--
+
+if LocalPeryton < MIN_PERYTON then
+
+    kickPlayer(
+        "Peryton habis di Trade World"
+    )
+
+    return
+
+end
+
+
+--========================================================--
+-- WAIT TRADE WORLD
+--========================================================--
+
 task.wait(
     TRADE_WAIT
 )
+
 
 --========================================================--
 -- BLACKLIST CHECK
@@ -1063,6 +1453,7 @@ task.wait(
 
 local badPlayer =
     isBlacklistedPlayerPresent()
+
 
 if badPlayer then
 
@@ -1072,7 +1463,9 @@ if badPlayer then
     )
 
     return
+
 end
+
 
 --========================================================--
 -- CLAIM BOOTH
@@ -1081,6 +1474,7 @@ end
 local boothSuccess =
     claimBooth()
 
+
 if not boothSuccess then
 
     warn(
@@ -1088,21 +1482,26 @@ if not boothSuccess then
     )
 
     return
+
 end
 
+
 --========================================================--
--- REMOVE INVALID LISTINGS FIRST
+-- REMOVE INVALID LISTINGS
 --========================================================--
 
 print(
     "[TRADE] Booth claimed."
 )
 
+
 print(
     "[REMOVE] Checking existing listings..."
 )
 
+
 removeInvalidListings()
+
 
 --========================================================--
 -- START AUTO LIST
@@ -1112,9 +1511,15 @@ print(
     "[TRADE] Starting Auto Peryton Listing..."
 )
 
+
 task.spawn(
     startAutoListing
 )
+
+
+--========================================================--
+-- READY
+--========================================================--
 
 print(
     "================================================"
@@ -1125,7 +1530,19 @@ print(
 )
 
 print(
-    "KEEP VALID + REMOVE INVALID + AUTO LIST"
+    "Peryton Monitor : 10 seconds"
+)
+
+print(
+    "Keep Valid      : ON"
+)
+
+print(
+    "Remove Invalid  : ON"
+)
+
+print(
+    "Auto Listing    : ON"
 )
 
 print(
