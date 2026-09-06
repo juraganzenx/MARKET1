@@ -1,0 +1,714 @@
+--MARKET AUTO AMBIL KE PETELUR
+
+--========================================================--
+-- AUTO PERYTON TRADE + CLAIM BOOTH + AUTO LIST
+--========================================================--
+
+--========================================================--
+-- CONFIG
+--========================================================--
+
+local MIN_PERYTON = 12
+
+-- Jika Peryton < 12, join server ini
+-- Isi dengan JobId / Server Instance ID tujuan
+local TARGET_SERVER_JOB_ID = ""
+
+-- Trade World
+local TRADE_WORLD_ID = 129954712878723
+
+-- Listing
+local TARGET_NAME = "Peryton"
+local MIN_KG = 1.3
+local PRICE = 1000
+local PER_ITEM_DELAY = 10
+
+-- Delay
+local TRADE_WAIT = 3
+local CLAIM_TIMEOUT = 5
+local LIST_START_DELAY = 60
+
+--========================================================--
+-- SERVICES
+--========================================================--
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+
+local LocalPlayer = Players.LocalPlayer
+local Backpack = LocalPlayer:WaitForChild("Backpack")
+
+--========================================================--
+-- REMOTES
+--========================================================--
+
+local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+
+local travelEventToTrade =
+    GameEvents
+        :WaitForChild("TradeWorld")
+        :WaitForChild("TravelToTradeWorld")
+
+local claimBoothEvent =
+    GameEvents
+        :WaitForChild("TradeEvents")
+        :WaitForChild("Booths")
+        :WaitForChild("ClaimBooth")
+
+local CreateListing =
+    GameEvents
+        :WaitForChild("TradeEvents")
+        :WaitForChild("Booths")
+        :WaitForChild("CreateListing")
+
+--========================================================--
+-- BLACKLIST
+--========================================================--
+
+local blacklist = {
+    ["Ochil_28"] = true,
+    ["setokmimic"] = true,
+    ["CihuyyXuhuyyy11"] = true
+}
+
+--========================================================--
+-- GET PERYTON COUNT
+--========================================================--
+
+local function getPerytonCount()
+
+    local count = 0
+
+    for _, tool in ipairs(Backpack:GetChildren()) do
+
+        if tool:IsA("Tool") then
+
+            if string.find(
+                tool.Name,
+                "Peryton",
+                1,
+                true
+            ) then
+
+                count += 1
+
+            end
+        end
+    end
+
+    -- Cek juga Character kalau ada tool yang sedang equipped
+    if LocalPlayer.Character then
+
+        for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+
+            if tool:IsA("Tool") then
+
+                if string.find(
+                    tool.Name,
+                    "Peryton",
+                    1,
+                    true
+                ) then
+
+                    count += 1
+
+                end
+            end
+        end
+    end
+
+    return count
+end
+
+--========================================================--
+-- TELEPORT TO TARGET SERVER
+--========================================================--
+
+local function teleportToTargetServer()
+
+    if TARGET_SERVER_JOB_ID == "" then
+
+        warn("TARGET_SERVER_JOB_ID belum diisi.")
+
+        warn(
+            "Share link Roblox tidak dapat langsung digunakan " ..
+            "sebagai JobId oleh TeleportService."
+        )
+
+        return false
+    end
+
+    local success, err = pcall(function()
+
+        TeleportService:TeleportToPlaceInstance(
+            game.PlaceId,
+            TARGET_SERVER_JOB_ID,
+            LocalPlayer
+        )
+
+    end)
+
+    if success then
+
+        print(
+            "[PERYTON] Teleport ke target server..."
+        )
+
+        return true
+
+    else
+
+        warn(
+            "[PERYTON] Teleport gagal:",
+            err
+        )
+
+        return false
+
+    end
+end
+
+--========================================================--
+-- CHECK BLACKLIST
+--========================================================--
+
+local function isBlacklistedPlayerPresent()
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player ~= LocalPlayer then
+
+            if blacklist[player.Name] then
+
+                return player.Name
+
+            end
+
+        end
+
+    end
+
+    return nil
+end
+
+--========================================================--
+-- GET BOOTH OWNER
+--========================================================--
+
+local function getBoothOwnerFromSurfaceGui(booth)
+
+    for _, d in ipairs(booth:GetDescendants()) do
+
+        if d:IsA("SurfaceGui") then
+
+            for _, g in ipairs(d:GetDescendants()) do
+
+                if g:IsA("TextLabel") then
+
+                    local txt = g.Text
+
+                    if txt and txt ~= "" then
+
+                        local lower = txt:lower()
+
+                        if lower:find("claim")
+                        or lower:find("rent")
+                        or lower:find("empty")
+                        or lower:find("buy")
+                        or lower:find("open") then
+
+                            continue
+
+                        end
+
+                        if #txt >= 3
+                        and #txt <= 20 then
+
+                            return txt
+
+                        end
+
+                    end
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return "Unclaimed"
+end
+
+--========================================================--
+-- WAIT CLAIM
+--========================================================--
+
+local function waitForClaim(booth, timeout)
+
+    local elapsed = 0
+
+    while elapsed < timeout do
+
+        local owner =
+            getBoothOwnerFromSurfaceGui(booth)
+
+        if owner ~= "Unclaimed" then
+
+            return true
+
+        end
+
+        task.wait(0.5)
+
+        elapsed += 0.5
+
+    end
+
+    return false
+end
+
+--========================================================--
+-- FIND EMPTY BOOTH
+--========================================================--
+
+local function getValidBooth()
+
+    local tradeWorld =
+        workspace:WaitForChild("TradeWorld")
+
+    local booths =
+        tradeWorld:WaitForChild("Booths")
+
+    for _, booth in ipairs(booths:GetChildren()) do
+
+        local success, position =
+            pcall(function()
+
+                return booth:GetPivot().Position
+
+            end)
+
+        if success and position then
+
+            local owner =
+                getBoothOwnerFromSurfaceGui(booth)
+
+            if position.Y < 1
+            and owner == "Unclaimed" then
+
+                return booth
+
+            end
+
+        end
+
+    end
+
+    return nil
+end
+
+--========================================================--
+-- CLAIM BOOTH
+--========================================================--
+
+local function claimBooth()
+
+    local booth = getValidBooth()
+
+    if not booth then
+
+        warn(
+            "[BOOTH] Tidak ada booth kosong."
+        )
+
+        return false
+
+    end
+
+    print(
+        "[BOOTH] Trying to claim:",
+        booth.Name
+    )
+
+    local success, err =
+        pcall(function()
+
+            claimBoothEvent:FireServer(
+                booth
+            )
+
+        end)
+
+    if not success then
+
+        warn(
+            "[BOOTH] Claim remote error:",
+            err
+        )
+
+        return false
+
+    end
+
+    local claimed =
+        waitForClaim(
+            booth,
+            CLAIM_TIMEOUT
+        )
+
+    if claimed then
+
+        print(
+            "[BOOTH] SUCCESS:",
+            booth.Name
+        )
+
+        return true
+
+    end
+
+    warn(
+        "[BOOTH] Claim gagal."
+    )
+
+    return false
+end
+
+--========================================================--
+-- GET PET WEIGHT
+--========================================================--
+
+local function getWeight(toolName)
+
+    local weight =
+        toolName:match(
+            "%[(%d+%.?%d*)%s*KG%]"
+        )
+
+    if weight then
+
+        return tonumber(weight)
+
+    end
+
+    return nil
+end
+
+--========================================================--
+-- LIST PET
+--========================================================--
+
+local function listPet(tool)
+
+    if not tool
+    or not tool.Parent then
+
+        return false
+
+    end
+
+    local uuid =
+        tool:GetAttribute("PET_UUID")
+
+    if not uuid then
+
+        warn(
+            "[LIST] PET_UUID tidak ditemukan:",
+            tool.Name
+        )
+
+        return false
+
+    end
+
+    local args = {
+        [1] = "Pet",
+        [2] = uuid,
+        [3] = PRICE
+    }
+
+    local success, err =
+        pcall(function()
+
+            CreateListing:InvokeServer(
+                unpack(args)
+            )
+
+        end)
+
+    if success then
+
+        print(
+            string.format(
+                "[LISTED] %s | KG=%s | UUID=%s | PRICE=%s",
+                tool.Name,
+                tostring(getWeight(tool.Name)),
+                tostring(uuid),
+                tostring(PRICE)
+            )
+        )
+
+        return true
+
+    else
+
+        warn(
+            "[LIST] Failed:",
+            err
+        )
+
+        return false
+
+    end
+end
+
+--========================================================--
+-- FIND PERYTON FOR LISTING
+--========================================================--
+
+local function getListingCandidates()
+
+    local candidates = {}
+
+    for _, tool in ipairs(Backpack:GetChildren()) do
+
+        if tool:IsA("Tool") then
+
+            if string.find(
+                tool.Name,
+                TARGET_NAME,
+                1,
+                true
+            ) then
+
+                local weight =
+                    getWeight(tool.Name)
+
+                if weight
+                and weight >= MIN_KG then
+
+                    table.insert(
+                        candidates,
+                        tool
+                    )
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return candidates
+end
+
+--========================================================--
+-- AUTO LIST
+--========================================================--
+
+local function startAutoListing()
+
+    print(
+        "[AUTO LISTER] Waiting",
+        LIST_START_DELAY,
+        "seconds..."
+    )
+
+    task.wait(LIST_START_DELAY)
+
+    while true do
+
+        local candidates =
+            getListingCandidates()
+
+        print(
+            "[AUTO LISTER] Found:",
+            #candidates
+        )
+
+        if #candidates == 0 then
+
+            print(
+                "[AUTO LISTER] Tidak ada Peryton yang memenuhi config."
+            )
+
+        end
+
+        for _, tool in ipairs(candidates) do
+
+            if tool
+            and tool.Parent == Backpack then
+
+                listPet(tool)
+
+                task.wait(
+                    PER_ITEM_DELAY
+                )
+
+            end
+
+        end
+
+        task.wait(60)
+
+    end
+end
+
+--========================================================--
+-- TELEPORT FAILED DETECTOR
+--========================================================--
+
+pcall(function()
+
+    TeleportService.TeleportInitFailed:Connect(
+        function(player, result, message)
+
+            if player == LocalPlayer then
+
+                warn(
+                    "[TELEPORT FAILED]",
+                    tostring(result),
+                    tostring(message)
+                )
+
+            end
+
+        end
+    )
+
+end)
+
+--========================================================--
+-- MAIN FLOW
+--========================================================--
+
+local LocalPeryton =
+    getPerytonCount()
+
+print(
+    "[PERYTON] Current count:",
+    LocalPeryton
+)
+
+--========================================================--
+-- PERYTON < 12
+--========================================================--
+
+if LocalPeryton < MIN_PERYTON then
+
+    print(
+        "[PERYTON]",
+        LocalPeryton,
+        "<",
+        MIN_PERYTON,
+        "→ target server"
+    )
+
+    teleportToTargetServer()
+
+    return
+end
+
+--========================================================--
+-- PERYTON >= 12
+--========================================================--
+
+print(
+    "[PERYTON]",
+    LocalPeryton,
+    ">=",
+    MIN_PERYTON,
+    "→ Trade World"
+)
+
+--========================================================--
+-- MAIN PLACE → TRADE WORLD
+--========================================================--
+
+if game.PlaceId ~= TRADE_WORLD_ID then
+
+    print(
+        "[TRADE] Moving to Trade World..."
+    )
+
+    local success, err =
+        pcall(function()
+
+            travelEventToTrade:FireServer()
+
+        end)
+
+    if not success then
+
+        warn(
+            "[TRADE] Travel failed:",
+            err
+        )
+
+    end
+
+    return
+end
+
+--========================================================--
+-- ALREADY IN TRADE WORLD
+--========================================================--
+
+print(
+    "[TRADE] Already in Trade World."
+)
+
+task.wait(TRADE_WAIT)
+
+--========================================================--
+-- BLACKLIST CHECK
+--========================================================--
+
+local badPlayer =
+    isBlacklistedPlayerPresent()
+
+if badPlayer then
+
+    warn(
+        "[TRADE] Blacklisted player detected:",
+        badPlayer
+    )
+
+    return
+end
+
+--========================================================--
+-- CLAIM BOOTH
+--========================================================--
+
+local boothSuccess =
+    claimBooth()
+
+if not boothSuccess then
+
+    warn(
+        "[TRADE] Booth claim failed."
+    )
+
+    return
+end
+
+--========================================================--
+-- START LISTING
+--========================================================--
+
+print(
+    "[TRADE] Booth claimed."
+)
+
+print(
+    "[LIST] Starting Auto Peryton Listing..."
+)
+
+task.spawn(
+    startAutoListing
+)
