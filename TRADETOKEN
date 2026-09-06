@@ -1,9 +1,11 @@
---TRADE TOKEN
+
+--//==================================================
 --// AUTO TRADE + AUTO ACCEPT + AUTO CONFIRM
 --// + SET TOKENS
 --// + STATUS GUI
 --//
---// AUTO START
+--// PLACE ID RESTRICTION
+--// -> HANYA AKTIF DI PLACE ID 126884695634066
 --//
 --// GIFT:
 --// -> ACCEPT GIFT NOTIFICATION LAMA
@@ -12,14 +14,27 @@
 --// TRADE:
 --// -> TIDAK PERLU PILIH PET
 --// -> SET TOKENS 9999
---// -> WAIT 0.5
+--// -> WAIT 6
 --// -> ACCEPT
 --// -> WAIT 0.5
 --// -> CONFIRM
 --//==================================================
 
 
--- ================= CONFIG =================
+--==================================================
+-- PLACE ID CHECK
+--==================================================
+
+local ALLOWED_PLACE_ID = 126884695634066
+
+if game.PlaceId ~= ALLOWED_PLACE_ID then
+    return
+end
+
+
+--==================================================
+-- CONFIG
+--==================================================
 
 local TRADE_LOOP_DELAY = 1
 local ACCEPT_DELAY = 0.5
@@ -28,22 +43,29 @@ local MAX_PETS = 12
 
 local TRADE_TOKENS = 9999
 
-
 -- Kosong = tidak memasukkan pet.
 -- Trade tetap melakukan SetTokens + Accept + Confirm.
 local selectedPets = {}
 
 
--- ================= SERVICES =================
+--==================================================
+-- SERVICES
+--==================================================
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players =
+    game:GetService("Players")
 
-local GuiService = game:GetService("GuiService")
+local ReplicatedStorage =
+    game:GetService("ReplicatedStorage")
+
+local GuiService =
+    game:GetService("GuiService")
+
 local VirtualInputManager =
     game:GetService("VirtualInputManager")
 
-local player = Players.LocalPlayer
+local player =
+    Players.LocalPlayer
 
 local playerGui =
     player:WaitForChild("PlayerGui")
@@ -52,39 +74,51 @@ local backpack =
     player:WaitForChild("Backpack")
 
 local GameEvents =
-    ReplicatedStorage:WaitForChild("GameEvents")
+    ReplicatedStorage:WaitForChild(
+        "GameEvents"
+    )
 
 
--- ==================================================
+--==================================================
 -- TRADE EVENTS
--- ==================================================
+--==================================================
 
 local tradeEvents =
-    GameEvents:WaitForChild("TradeEvents")
+    GameEvents:WaitForChild(
+        "TradeEvents"
+    )
 
 local addItemEvent =
-    tradeEvents:WaitForChild("AddItem")
+    tradeEvents:WaitForChild(
+        "AddItem"
+    )
 
 local setTokensEvent =
-    tradeEvents:WaitForChild("SetTokens")
+    tradeEvents:WaitForChild(
+        "SetTokens"
+    )
 
 local acceptEvent =
-    tradeEvents:WaitForChild("Accept")
+    tradeEvents:WaitForChild(
+        "Accept"
+    )
 
 local confirmEvent =
-    tradeEvents:WaitForChild("Confirm")
+    tradeEvents:WaitForChild(
+        "Confirm"
+    )
 
 
--- ==================================================
+--==================================================
 -- GLOBAL FLAGS
--- ==================================================
+--==================================================
 
 local autoAcceptRunning = true
 
 
--- ==================================================
+--==================================================
 -- STATUS GUI
--- ==================================================
+--==================================================
 
 local function createStatusGUI()
 
@@ -114,7 +148,9 @@ local function createStatusGUI()
         playerGui
 
 
-    -- ================= FRAME =================
+    --==================================================
+    -- FRAME
+    --==================================================
 
     local frame =
         Instance.new("Frame")
@@ -170,7 +206,9 @@ local function createStatusGUI()
         frame
 
 
-    -- ================= STATUS =================
+    --==================================================
+    -- STATUS
+    --==================================================
 
     local status =
         Instance.new("TextLabel")
@@ -214,13 +252,13 @@ local function createStatusGUI()
 end
 
 
--- ==================================================
+--==================================================
 -- AUTO ACCEPT GIFT
 --
 -- ACCEPT:
 -- 1. NOTIFICATION YANG SUDAH ADA
 -- 2. NOTIFICATION BARU
--- ==================================================
+--==================================================
 
 local function startGiftAutoAccept()
 
@@ -230,9 +268,9 @@ local function startGiftAutoAccept()
         )
 
 
-    -- ==================================================
+    --==================================================
     -- CHECK ACCEPT BUTTON
-    -- ==================================================
+    --==================================================
 
     local function isAcceptButton(btn)
 
@@ -285,9 +323,9 @@ local function startGiftAutoAccept()
     end
 
 
-    -- ==================================================
+    --==================================================
     -- CLICK ACCEPT
-    -- ==================================================
+    --==================================================
 
     local function clickAccept(btn)
 
@@ -350,9 +388,9 @@ local function startGiftAutoAccept()
     end
 
 
-    -- ==================================================
+    --==================================================
     -- CHECK OBJECT
-    -- ==================================================
+    --==================================================
 
     local function tryHandle(obj)
 
@@ -391,9 +429,9 @@ local function startGiftAutoAccept()
     end
 
 
-    -- ==================================================
+    --==================================================
     -- HANDLE GIFT YANG SUDAH ADA
-    -- ==================================================
+    --==================================================
 
     for _, obj in ipairs(
         giftNotif:GetDescendants()
@@ -404,9 +442,9 @@ local function startGiftAutoAccept()
     end
 
 
-    -- ==================================================
+    --==================================================
     -- HANDLE GIFT BARU
-    -- ==================================================
+    --==================================================
 
     giftNotif.DescendantAdded:Connect(
         function(desc)
@@ -428,9 +466,9 @@ local function startGiftAutoAccept()
 end
 
 
--- ==================================================
+--==================================================
 -- GET SELECTED PET UUID
--- ==================================================
+--==================================================
 
 local function getSelectedPetUUIDs()
 
@@ -496,9 +534,9 @@ local function getSelectedPetUUIDs()
 end
 
 
--- ==================================================
+--==================================================
 -- AUTO TRADE
--- ==================================================
+--==================================================
 
 local function startAutoTrade()
 
@@ -511,17 +549,17 @@ local function startAutoTrade()
 
             if autoAcceptRunning then
 
-                -- ==================================
+                --==========================================
                 -- GET PET
-                -- ==================================
+                --==========================================
 
                 local petsList =
                     getSelectedPetUUIDs()
 
 
-                -- ==================================
+                --==========================================
                 -- ADD PET
-                -- ==================================
+                --==========================================
 
                 if #petsList > 0 then
 
@@ -544,52 +582,52 @@ local function startAutoTrade()
                 end
 
 
-                -- ==================================
+                --==========================================
                 -- SET TOKENS
-                -- ==================================
+                --==========================================
 
                 setTokensEvent:FireServer(
                     TRADE_TOKENS
                 )
 
 
-                -- ==================================
-                -- WAIT 0.5
-                -- ==================================
+                --==========================================
+                -- WAIT 6
+                --==========================================
 
                 task.wait(
                     6
                 )
 
 
-                -- ==================================
+                --==========================================
                 -- ACCEPT TRADE
-                -- ==================================
+                --==========================================
 
                 acceptEvent:FireServer()
 
 
-                -- ==================================
+                --==========================================
                 -- WAIT 0.5
-                -- ==================================
+                --==========================================
 
                 task.wait(
                     0.5
                 )
 
 
-                -- ==================================
+                --==========================================
                 -- CONFIRM TRADE
-                -- ==================================
+                --==========================================
 
                 confirmEvent:FireServer()
 
             end
 
 
-            -- ======================================
+            --==============================================
             -- LOOP DELAY
-            -- ======================================
+            --==============================================
 
             task.wait(
                 TRADE_LOOP_DELAY
@@ -602,9 +640,9 @@ local function startAutoTrade()
 end
 
 
--- ==================================================
+--==================================================
 -- AUTO START
--- ==================================================
+--==================================================
 
 task.spawn(function()
 
@@ -612,24 +650,25 @@ task.spawn(function()
     task.wait(2)
 
 
-    -- ==============================================
+    --==============================================
     -- STATUS GUI
-    -- ==============================================
+    --==============================================
 
     createStatusGUI()
 
 
-    -- ==============================================
+    --==============================================
     -- AUTO ACCEPT GIFT
-    -- ==============================================
+    --==============================================
 
     startGiftAutoAccept()
 
 
-    -- ==============================================
+    --==============================================
     -- AUTO TRADE
-    -- ==============================================
+    --==============================================
 
     startAutoTrade()
 
 end)
+
