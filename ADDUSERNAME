@@ -1,0 +1,640 @@
+--[[
+========================================================
+        AUTO ADD USERNAME → GITHUB
+========================================================
+
+FILE:
+addusername.json
+
+FLOW:
+1. Ambil username + UserId
+2. Read addusername.json dari RAW GitHub
+3. Cek apakah username sudah ada
+4. Jika sudah ada  -> SKIP
+5. Jika belum ada  -> APPEND
+6. Write kembali ke GitHub
+
+TIDAK ADA:
+- jobs.json
+- JobId
+- Loop
+========================================================
+]]
+
+--//==================================================
+--// SERVICES
+--//==================================================
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+
+
+--//==================================================
+--// CONFIG
+--//==================================================
+
+local GITHUB_OWNER = "juraganzenx"
+local GITHUB_REPO = "roblox-jobs"
+local GITHUB_BRANCH = "main"
+
+local FILE_NAME = "addusername.json"
+
+--// MASUKKAN GITHUB TOKEN KAMU
+local GITHUB_TOKEN = "github_pat_PASTE_TOKEN_HERE"
+
+
+--//==================================================
+--// URL
+--//==================================================
+
+local RAW_URL =
+    "https://raw.githubusercontent.com/"
+    .. GITHUB_OWNER
+    .. "/"
+    .. GITHUB_REPO
+    .. "/refs/heads/"
+    .. GITHUB_BRANCH
+    .. "/"
+    .. FILE_NAME
+
+
+local API_URL =
+    "https://api.github.com/repos/"
+    .. GITHUB_OWNER
+    .. "/"
+    .. GITHUB_REPO
+    .. "/contents/"
+    .. FILE_NAME
+
+
+--//==================================================
+--// GET REQUEST FUNCTION
+--//==================================================
+
+local function GetRequestFunction()
+
+    if request then
+        return request
+    end
+
+    if http_request then
+        return http_request
+    end
+
+    if syn and syn.request then
+        return syn.request
+    end
+
+    if http and http.request then
+        return http.request
+    end
+
+    return nil
+end
+
+
+local HTTP_REQUEST = GetRequestFunction()
+
+
+if not HTTP_REQUEST then
+
+    warn("========================================")
+    warn("[ADD USERNAME] HTTP REQUEST TIDAK ADA")
+    warn("========================================")
+
+    return
+end
+
+
+--//==================================================
+--// LOG
+--//==================================================
+
+local function Log(...)
+    print("[ADD USERNAME]", ...)
+end
+
+
+local function Warn(...)
+    warn("[ADD USERNAME]", ...)
+end
+
+
+--//==================================================
+--// BASE64
+--//==================================================
+
+local BASE64_CHARS =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    .. "abcdefghijklmnopqrstuvwxyz"
+    .. "0123456789+/"
+
+
+local function Base64Encode(data)
+
+    local result = {}
+
+    local length = #data
+    local i = 1
+
+
+    while i <= length do
+
+        local a = string.byte(data, i) or 0
+        local b = string.byte(data, i + 1) or 0
+        local c = string.byte(data, i + 2) or 0
+
+
+        local triple =
+            a * 65536
+            + b * 256
+            + c
+
+
+        local s1 =
+            math.floor(triple / 262144) % 64 + 1
+
+
+        local s2 =
+            math.floor(triple / 4096) % 64 + 1
+
+
+        local s3 =
+            math.floor(triple / 64) % 64 + 1
+
+
+        local s4 =
+            triple % 64 + 1
+
+
+        result[#result + 1] =
+            BASE64_CHARS:sub(s1, s1)
+
+
+        result[#result + 1] =
+            BASE64_CHARS:sub(s2, s2)
+
+
+        if i + 1 <= length then
+
+            result[#result + 1] =
+                BASE64_CHARS:sub(s3, s3)
+
+        else
+
+            result[#result + 1] = "="
+
+        end
+
+
+        if i + 2 <= length then
+
+            result[#result + 1] =
+                BASE64_CHARS:sub(s4, s4)
+
+        else
+
+            result[#result + 1] = "="
+
+        end
+
+
+        i = i + 3
+    end
+
+
+    return table.concat(result)
+end
+
+
+--//==================================================
+--// READ RAW JSON
+--//==================================================
+
+local function ReadRaw()
+
+    Log("Reading addusername.json...")
+
+
+    local success, response = pcall(function()
+
+        return HTTP_REQUEST({
+
+            Url = RAW_URL,
+
+            Method = "GET",
+
+            Headers = {
+
+                ["Cache-Control"] =
+                    "no-cache"
+
+            }
+
+        })
+
+    end)
+
+
+    if not success then
+
+        Warn("RAW request error:")
+        Warn(response)
+
+        return nil
+    end
+
+
+    if not response then
+
+        Warn("RAW response nil")
+
+        return nil
+    end
+
+
+    if response.StatusCode ~= 200 then
+
+        Warn(
+            "RAW status:",
+            response.StatusCode
+        )
+
+        Warn(
+            "RAW body:",
+            response.Body
+        )
+
+        return nil
+    end
+
+
+    local successDecode, data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                response.Body
+            )
+
+        end)
+
+
+    if not successDecode then
+
+        Warn("addusername.json bukan JSON valid")
+
+        return nil
+    end
+
+
+    if type(data) ~= "table" then
+
+        Warn("Format addusername.json harus array")
+
+        return nil
+    end
+
+
+    return data
+end
+
+
+--//==================================================
+--// CHECK USERNAME
+--//==================================================
+
+local function UsernameExists(
+    data,
+    targetUsername
+)
+
+    for _, entry in ipairs(data) do
+
+        if type(entry) == "table" then
+
+            if entry.username == targetUsername then
+
+                return true
+            end
+
+        end
+
+    end
+
+
+    return false
+end
+
+
+--//==================================================
+--// GET GITHUB FILE SHA
+--//==================================================
+
+local function GetGithubFile()
+
+    Log("Getting GitHub file SHA...")
+
+
+    local success, response = pcall(function()
+
+        return HTTP_REQUEST({
+
+            Url = API_URL,
+
+            Method = "GET",
+
+            Headers = {
+
+                ["Accept"] =
+                    "application/vnd.github+json",
+
+                ["Authorization"] =
+                    "Bearer " .. GITHUB_TOKEN,
+
+                ["X-GitHub-Api-Version"] =
+                    "2022-11-28"
+
+            }
+
+        })
+
+    end)
+
+
+    if not success then
+
+        Warn("GitHub GET error:")
+        Warn(response)
+
+        return nil
+    end
+
+
+    if not response then
+
+        Warn("GitHub response nil")
+
+        return nil
+    end
+
+
+    if response.StatusCode ~= 200 then
+
+        Warn(
+            "GitHub GET status:",
+            response.StatusCode
+        )
+
+        Warn(
+            "GitHub response:",
+            response.Body
+        )
+
+        return nil
+    end
+
+
+    local successDecode, data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                response.Body
+            )
+
+        end)
+
+
+    if not successDecode then
+
+        Warn("GitHub response invalid JSON")
+
+        return nil
+    end
+
+
+    return data
+end
+
+
+--//==================================================
+--// WRITE GITHUB
+--//==================================================
+
+local function WriteGithub(data)
+
+    Log("Encoding JSON...")
+
+
+    local json =
+        HttpService:JSONEncode(data)
+
+
+    Log("Getting current SHA...")
+
+
+    local fileInfo =
+        GetGithubFile()
+
+
+    if not fileInfo then
+
+        Warn("Tidak mendapatkan informasi file")
+
+        return false
+    end
+
+
+    local sha =
+        fileInfo.sha
+
+
+    if not sha then
+
+        Warn("SHA tidak ditemukan")
+
+        return false
+    end
+
+
+    -- BASE64
+
+    local encodedContent =
+        Base64Encode(json)
+
+
+    -- BODY
+
+    local body = {
+
+        message =
+            "Add username " .. LocalPlayer.Name,
+
+        content =
+            encodedContent,
+
+        sha =
+            sha,
+
+        branch =
+            GITHUB_BRANCH
+
+    }
+
+
+    Log("Writing addusername.json...")
+
+
+    local success, response = pcall(function()
+
+        return HTTP_REQUEST({
+
+            Url = API_URL,
+
+            Method = "PUT",
+
+            Headers = {
+
+                ["Accept"] =
+                    "application/vnd.github+json",
+
+                ["Authorization"] =
+                    "Bearer " .. GITHUB_TOKEN,
+
+                ["Content-Type"] =
+                    "application/json",
+
+                ["X-GitHub-Api-Version"] =
+                    "2022-11-28"
+
+            },
+
+            Body =
+                HttpService:JSONEncode(body)
+
+        })
+
+    end)
+
+
+    if not success then
+
+        Warn("GitHub PUT error:")
+        Warn(response)
+
+        return false
+    end
+
+
+    if not response then
+
+        Warn("GitHub PUT response nil")
+
+        return false
+    end
+
+
+    if response.StatusCode == 200 then
+
+        Log("========================================")
+        Log("USERNAME BERHASIL DITAMBAHKAN")
+        Log("Username:", LocalPlayer.Name)
+        Log("UserId:", LocalPlayer.UserId)
+        Log("========================================")
+
+        return true
+    end
+
+
+    Warn("========================================")
+    Warn("WRITE GAGAL")
+    Warn("Status:", response.StatusCode)
+    Warn("Response:", response.Body)
+    Warn("========================================")
+
+    return false
+end
+
+
+--//==================================================
+--// MAIN
+--//==================================================
+
+Log("========================================")
+Log("       ADD USERNAME TO GITHUB")
+Log("========================================")
+
+local username =
+    LocalPlayer.Name
+
+local userId =
+    LocalPlayer.UserId
+
+
+Log("Username:", username)
+Log("UserId:", userId)
+
+
+--// READ CURRENT DATA
+
+local data =
+    ReadRaw()
+
+
+if not data then
+
+    Warn("Gagal membaca addusername.json")
+    Warn("WRITE DIBATALKAN")
+
+    return
+end
+
+
+--// CHECK USERNAME
+
+if UsernameExists(
+    data,
+    username
+) then
+
+    Log("========================================")
+    Log("USERNAME SUDAH ADA")
+    Log("Username:", username)
+    Log("SKIP WRITE")
+    Log("========================================")
+
+    return
+end
+
+
+--//==================================================
+--// ADD NEW USERNAME
+--//==================================================
+
+table.insert(
+    data,
+    {
+
+        username =
+            username,
+
+        userId =
+            userId,
+
+        timestamp =
+            os.time()
+
+    }
+)
+
+
+Log("Username belum ada.")
+Log("Menambahkan ke list...")
+
+
+--//==================================================
+--// WRITE
+--//==================================================
+
+WriteGithub(data)
