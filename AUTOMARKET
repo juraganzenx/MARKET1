@@ -1,9 +1,14 @@
---AUTOMARKET
+--AUTOMARKETa
 --========================================================--
 -- MARKET AUTO PERYTON
 -- AUTO TRADE WORLD + CLAIM BOOTH
 -- REMOVE INVALID LISTING + KEEP VALID LISTING
 -- AUTO LIST PERYTON
+--
+-- BLACKLIST:
+--   Ambil username dari addusername.json GitHub
+--   Load hanya 1x saat awal execute
+--   Username sendiri selalu dikecualikan
 --
 -- PERYTON MONITOR:
 -- MAIN WORLD:
@@ -50,6 +55,10 @@ local SCAN_DELAY = 60
 -- Peryton monitor
 local PERYTON_CHECK_DELAY = 10
 
+-- GitHub blacklist
+local BLACKLIST_URL =
+    "https://raw.githubusercontent.com/juraganzenx/roblox-jobs/refs/heads/main/addusername.json"
+
 
 --========================================================--
 -- SERVICES
@@ -61,6 +70,8 @@ local Players =
 local ReplicatedStorage =
     game:GetService("ReplicatedStorage")
 
+local HttpService =
+    game:GetService("HttpService")
 
 local LocalPlayer =
     Players.LocalPlayer
@@ -142,16 +153,134 @@ end)
 --========================================================--
 -- BLACKLIST
 --========================================================--
+-- Username diambil dari GitHub.
+--
+-- Contoh:
+-- [
+--   {
+--      "username": "asepppy38",
+--      "timestamp": 1788706726,
+--      "userId": 8508210035
+--   }
+-- ]
+--
+-- LocalPlayer SELALU dikecualikan ketika pengecekan.
+--========================================================--
 
-local blacklist = {
+local blacklist = {}
 
-    ["Ochil_28"] = true,
 
-    ["setokmimic"] = true,
+local function loadBlacklist()
 
-    ["CihuyyXuhuyyy11"] = true
+    print(
+        "[BLACKLIST] Loading from GitHub..."
+    )
 
-}
+
+    local success, response =
+        pcall(function()
+
+            return game:HttpGet(
+                BLACKLIST_URL
+            )
+
+        end)
+
+
+    if not success then
+
+        warn(
+            "[BLACKLIST] Failed to download:",
+            tostring(response)
+        )
+
+        return false
+
+    end
+
+
+    local decodeSuccess, data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                response
+            )
+
+        end)
+
+
+    if not decodeSuccess then
+
+        warn(
+            "[BLACKLIST] JSON decode failed:",
+            tostring(data)
+        )
+
+        return false
+
+    end
+
+
+    if type(data) ~= "table" then
+
+        warn(
+            "[BLACKLIST] Invalid JSON format."
+        )
+
+        return false
+
+    end
+
+
+    table.clear(
+        blacklist
+    )
+
+
+    local count = 0
+
+
+    for _, entry in ipairs(data) do
+
+        if type(entry) == "table"
+        and entry.username then
+
+            local username =
+                tostring(
+                    entry.username
+                )
+
+
+            if username ~= ""
+            and username ~= LocalPlayer.Name then
+
+                blacklist[username] = true
+
+                count += 1
+
+            end
+
+        end
+
+    end
+
+
+    print(
+        "[BLACKLIST] Loaded:",
+        count,
+        "players"
+    )
+
+
+    print(
+        "[BLACKLIST] LocalPlayer excluded:",
+        LocalPlayer.Name
+    )
+
+
+    return true
+
+end
 
 
 --========================================================--
@@ -289,12 +418,29 @@ end
 --========================================================--
 -- BLACKLIST CHECK
 --========================================================--
+-- Cek player SERVER TERKINI setiap kali fungsi dipanggil.
+--
+-- LocalPlayer selalu dikecualikan.
+--
+-- Jadi walaupun:
+-- 1. Username kita ada di addusername.json
+-- 2. Username kita ada di server
+--
+-- kita TIDAK akan dianggap blacklist.
+--
+-- Player blacklist yang baru JOIN juga akan langsung
+-- terdeteksi pada pengecekan berikutnya.
+--========================================================--
 
 local function isBlacklistedPlayerPresent()
 
     for _, player in ipairs(
         Players:GetPlayers()
     ) do
+
+        --================================================--
+        -- EXCLUDE DIRI SENDIRI
+        --================================================--
 
         if player ~= LocalPlayer then
 
@@ -307,6 +453,7 @@ local function isBlacklistedPlayerPresent()
         end
 
     end
+
 
     return nil
 
@@ -1142,7 +1289,10 @@ end
 -- PERYTON MONITOR
 --========================================================--
 -- LOOP TETAP:
--- Setiap 10 detik baca ulang kondisi terbaru.
+-- Setiap 10 detik:
+-- 1. Cek jumlah Peryton
+-- 2. Cek world
+-- 3. Cek kondisi player terbaru
 --========================================================--
 
 local function startPerytonMonitor()
@@ -1169,9 +1319,38 @@ local function startPerytonMonitor()
                 game.PlaceId == TRADE_WORLD_ID
 
 
+            --================================================--
+            -- BLACKLIST CHECK
+            --================================================--
+            -- Selalu cek player yang sedang ada di server.
+            --
+            -- LocalPlayer dikecualikan.
+            --================================================--
+
+            local blacklistedPlayer =
+                isBlacklistedPlayerPresent()
+
+
+            if blacklistedPlayer then
+
+                warn(
+                    "[BLACKLIST] Detected:",
+                    blacklistedPlayer
+                )
+
+                kickPlayer(
+                    "Blacklisted player detected: "
+                    .. blacklistedPlayer
+                )
+
+                return
+
+            end
+
+
             print(
                 string.format(
-                    "[MONITOR] Peryton=%d | World=%s",
+                    "[MONITOR] Peryton=%d | World=%s | Blacklist=Clear",
                     currentPeryton,
                     inTradeWorld
                     and "TRADE"
@@ -1317,6 +1496,33 @@ end)
 
 
 --========================================================--
+-- LOAD BLACKLIST
+--========================================================--
+-- GitHub hanya dibaca 1 kali.
+--
+-- Setelah itu blacklist disimpan di memory.
+--========================================================--
+
+local blacklistLoaded =
+    loadBlacklist()
+
+
+if not blacklistLoaded then
+
+    warn(
+        "[BLACKLIST] GitHub blacklist gagal dimuat."
+    )
+
+else
+
+    print(
+        "[BLACKLIST] Ready."
+    )
+
+end
+
+
+--========================================================--
 -- START MONITOR
 --========================================================--
 
@@ -1357,7 +1563,23 @@ print(
 )
 
 print(
+    "[SYSTEM] Blacklist:",
+    blacklistLoaded
+    and "LOADED FROM GITHUB"
+    or "LOAD FAILED"
+)
+
+print(
+    "[SYSTEM] Self Excluded:",
+    LocalPlayer.Name
+)
+
+print(
     "[SYSTEM] Peryton monitor: EVERY 10 SECONDS"
+)
+
+print(
+    "[SYSTEM] Blacklist player check: EVERY 10 SECONDS"
 )
 
 print(
@@ -1370,6 +1592,26 @@ print(
 --========================================================--
 
 if not InTradeWorld then
+
+    --====================================================--
+    -- INITIAL BLACKLIST CHECK
+    --====================================================--
+
+    local badPlayer =
+        isBlacklistedPlayerPresent()
+
+
+    if badPlayer then
+
+        kickPlayer(
+            "Blacklisted player detected: "
+            .. badPlayer
+        )
+
+        return
+
+    end
+
 
     if LocalPeryton >= MIN_PERYTON then
 
@@ -1424,6 +1666,31 @@ isTravelingToTrade = false
 
 
 --========================================================--
+-- INITIAL BLACKLIST CHECK
+--========================================================--
+
+local initialBadPlayer =
+    isBlacklistedPlayerPresent()
+
+
+if initialBadPlayer then
+
+    warn(
+        "[TRADE] Blacklisted player detected:",
+        initialBadPlayer
+    )
+
+    kickPlayer(
+        "Blacklisted player detected: "
+        .. initialBadPlayer
+    )
+
+    return
+
+end
+
+
+--========================================================--
 -- PERYTON SUDAH HABIS
 --========================================================--
 
@@ -1448,7 +1715,7 @@ task.wait(
 
 
 --========================================================--
--- BLACKLIST CHECK
+-- BLACKLIST CHECK AFTER WAIT
 --========================================================--
 
 local badPlayer =
@@ -1460,6 +1727,11 @@ if badPlayer then
     warn(
         "[TRADE] Blacklisted player detected:",
         badPlayer
+    )
+
+    kickPlayer(
+        "Blacklisted player detected: "
+        .. badPlayer
     )
 
     return
@@ -1531,6 +1803,19 @@ print(
 
 print(
     "Peryton Monitor : 10 seconds"
+)
+
+print(
+    "Blacklist Source: GitHub addusername.json"
+)
+
+print(
+    "Blacklist Check : 10 seconds"
+)
+
+print(
+    "Self Excluded   : "
+    .. LocalPlayer.Name
 )
 
 print(
