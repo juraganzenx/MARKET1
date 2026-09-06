@@ -10,5 +10,5 @@ local function Execute(url)
     end)
 end
 
-Execute("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/AUTOTRADE")
+Execute("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/AUTOMARKET")
 Execute("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/TRADETOKEN")
