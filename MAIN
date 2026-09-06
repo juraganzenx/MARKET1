@@ -1,0 +1,14 @@
+local function Execute(url)
+    task.spawn(function()
+        local ok, err = pcall(function()
+            loadstring(game:HttpGet(url, true))()
+        end)
+
+        if not ok then
+            warn(err)
+        end
+    end)
+end
+
+Execute("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/AUTOTRADE")
+Execute("https://raw.githubusercontent.com/juraganzenx/MARKET1/refs/heads/main/AUTOMARKET")
