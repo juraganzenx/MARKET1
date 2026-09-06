@@ -1,14 +1,15 @@
---MARKET AUTO AMBIL KE PETELURr
-
 --========================================================--
--- AUTO PERYTON TRADE + CLAIM BOOTH + AUTO LIST
+-- MARKET AUTO PERYTON
+-- AUTO TRADE WORLD + CLAIM BOOTH
+-- REMOVE INVALID LISTING + KEEP VALID LISTING
+-- AUTO LIST PERYTON
 --========================================================--
 
 --========================================================--
 -- CONFIG
 --========================================================--
 
-local MIN_PERYTON = 12
+local MIN_PERYTON = 1
 
 -- Jika Peryton < 12, join server ini
 -- Isi dengan JobId / Server Instance ID tujuan
@@ -20,13 +21,15 @@ local TRADE_WORLD_ID = 129954712878723
 -- Listing
 local TARGET_NAME = "Peryton"
 local MIN_KG = 1.3
-local PRICE = 500
+local PRICE = 1000
 local PER_ITEM_DELAY = 10
 
 -- Delay
 local TRADE_WAIT = 3
 local CLAIM_TIMEOUT = 5
-local LIST_START_DELAY = 60
+local LIST_START_DELAY = 5
+local REMOVE_DELAY = 0.2
+local SCAN_DELAY = 60
 
 --========================================================--
 -- SERVICES
@@ -35,6 +38,7 @@ local LIST_START_DELAY = 60
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local Backpack = LocalPlayer:WaitForChild("Backpack")
@@ -45,22 +49,41 @@ local Backpack = LocalPlayer:WaitForChild("Backpack")
 
 local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
 
+local TradeWorldFolder =
+    GameEvents:WaitForChild("TradeWorld")
+
+local TradeEvents =
+    GameEvents:WaitForChild("TradeEvents")
+
+local Booths =
+    TradeEvents:WaitForChild("Booths")
+
 local travelEventToTrade =
-    GameEvents
-        :WaitForChild("TradeWorld")
-        :WaitForChild("TravelToTradeWorld")
+    TradeWorldFolder:WaitForChild("TravelToTradeWorld")
 
 local claimBoothEvent =
-    GameEvents
-        :WaitForChild("TradeEvents")
-        :WaitForChild("Booths")
-        :WaitForChild("ClaimBooth")
+    Booths:WaitForChild("ClaimBooth")
 
 local CreateListing =
-    GameEvents
-        :WaitForChild("TradeEvents")
-        :WaitForChild("Booths")
-        :WaitForChild("CreateListing")
+    Booths:WaitForChild("CreateListing")
+
+local RemoveListing =
+    Booths:WaitForChild("RemoveListing")
+
+--========================================================--
+-- BOOTH REPLICATION
+--========================================================--
+
+local BoothReplication
+
+pcall(function()
+    BoothReplication =
+        require(
+            ReplicatedStorage
+                :WaitForChild("Modules")
+                :WaitForChild("ReplicationReciever")
+        ).new("Booths")
+end)
 
 --========================================================--
 -- BLACKLIST
@@ -97,10 +120,12 @@ local function getPerytonCount()
         end
     end
 
-    -- Cek juga Character kalau ada tool yang sedang equipped
+    -- Character
     if LocalPlayer.Character then
 
-        for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+        for _, tool in ipairs(
+            LocalPlayer.Character:GetChildren()
+        ) do
 
             if tool:IsA("Tool") then
 
@@ -122,32 +147,30 @@ local function getPerytonCount()
 end
 
 --========================================================--
--- TELEPORT TO TARGET SERVER
+-- TELEPORT TARGET SERVER
 --========================================================--
 
 local function teleportToTargetServer()
 
     if TARGET_SERVER_JOB_ID == "" then
 
-        warn("TARGET_SERVER_JOB_ID belum diisi.")
-
         warn(
-            "Share link Roblox tidak dapat langsung digunakan " ..
-            "sebagai JobId oleh TeleportService."
+            "[PERYTON] TARGET_SERVER_JOB_ID belum diisi."
         )
 
         return false
     end
 
-    local success, err = pcall(function()
+    local success, err =
+        pcall(function()
 
-        TeleportService:TeleportToPlaceInstance(
-            game.PlaceId,
-            TARGET_SERVER_JOB_ID,
-            LocalPlayer
-        )
+            TeleportService:TeleportToPlaceInstance(
+                game.PlaceId,
+                TARGET_SERVER_JOB_ID,
+                LocalPlayer
+            )
 
-    end)
+        end)
 
     if success then
 
@@ -165,17 +188,18 @@ local function teleportToTargetServer()
         )
 
         return false
-
     end
 end
 
 --========================================================--
--- CHECK BLACKLIST
+-- BLACKLIST CHECK
 --========================================================--
 
 local function isBlacklistedPlayerPresent()
 
-    for _, player in ipairs(Players:GetPlayers()) do
+    for _, player in ipairs(
+        Players:GetPlayers()
+    ) do
 
         if player ~= LocalPlayer then
 
@@ -184,9 +208,7 @@ local function isBlacklistedPlayerPresent()
                 return player.Name
 
             end
-
         end
-
     end
 
     return nil
@@ -198,11 +220,15 @@ end
 
 local function getBoothOwnerFromSurfaceGui(booth)
 
-    for _, d in ipairs(booth:GetDescendants()) do
+    for _, d in ipairs(
+        booth:GetDescendants()
+    ) do
 
         if d:IsA("SurfaceGui") then
 
-            for _, g in ipairs(d:GetDescendants()) do
+            for _, g in ipairs(
+                d:GetDescendants()
+            ) do
 
                 if g:IsA("TextLabel") then
 
@@ -210,7 +236,8 @@ local function getBoothOwnerFromSurfaceGui(booth)
 
                     if txt and txt ~= "" then
 
-                        local lower = txt:lower()
+                        local lower =
+                            txt:lower()
 
                         if lower:find("claim")
                         or lower:find("rent")
@@ -219,7 +246,6 @@ local function getBoothOwnerFromSurfaceGui(booth)
                         or lower:find("open") then
 
                             continue
-
                         end
 
                         if #txt >= 3
@@ -228,15 +254,10 @@ local function getBoothOwnerFromSurfaceGui(booth)
                             return txt
 
                         end
-
                     end
-
                 end
-
             end
-
         end
-
     end
 
     return "Unclaimed"
@@ -246,25 +267,28 @@ end
 -- WAIT CLAIM
 --========================================================--
 
-local function waitForClaim(booth, timeout)
+local function waitForClaim(
+    booth,
+    timeout
+)
 
     local elapsed = 0
 
     while elapsed < timeout do
 
         local owner =
-            getBoothOwnerFromSurfaceGui(booth)
+            getBoothOwnerFromSurfaceGui(
+                booth
+            )
 
         if owner ~= "Unclaimed" then
 
             return true
-
         end
 
         task.wait(0.5)
 
         elapsed += 0.5
-
     end
 
     return false
@@ -277,12 +301,18 @@ end
 local function getValidBooth()
 
     local tradeWorld =
-        workspace:WaitForChild("TradeWorld")
+        workspace:WaitForChild(
+            "TradeWorld"
+        )
 
     local booths =
-        tradeWorld:WaitForChild("Booths")
+        tradeWorld:WaitForChild(
+            "Booths"
+        )
 
-    for _, booth in ipairs(booths:GetChildren()) do
+    for _, booth in ipairs(
+        booths:GetChildren()
+    ) do
 
         local success, position =
             pcall(function()
@@ -294,17 +324,16 @@ local function getValidBooth()
         if success and position then
 
             local owner =
-                getBoothOwnerFromSurfaceGui(booth)
+                getBoothOwnerFromSurfaceGui(
+                    booth
+                )
 
             if position.Y < 1
             and owner == "Unclaimed" then
 
                 return booth
-
             end
-
         end
-
     end
 
     return nil
@@ -316,7 +345,8 @@ end
 
 local function claimBooth()
 
-    local booth = getValidBooth()
+    local booth =
+        getValidBooth()
 
     if not booth then
 
@@ -325,7 +355,6 @@ local function claimBooth()
         )
 
         return false
-
     end
 
     print(
@@ -350,7 +379,6 @@ local function claimBooth()
         )
 
         return false
-
     end
 
     local claimed =
@@ -367,7 +395,6 @@ local function claimBooth()
         )
 
         return true
-
     end
 
     warn(
@@ -378,7 +405,7 @@ local function claimBooth()
 end
 
 --========================================================--
--- GET PET WEIGHT
+-- GET PET WEIGHT FROM TOOL
 --========================================================--
 
 local function getWeight(toolName)
@@ -391,10 +418,226 @@ local function getWeight(toolName)
     if weight then
 
         return tonumber(weight)
-
     end
 
     return nil
+end
+
+--========================================================--
+-- CONFIG MATCH
+--========================================================--
+
+local function matchesTarget(
+    petName,
+    weight,
+    price
+)
+
+    if not petName then
+        return false
+    end
+
+    if not string.find(
+        petName,
+        TARGET_NAME,
+        1,
+        true
+    ) then
+
+        return false
+    end
+
+    if not weight then
+        return false
+    end
+
+    if weight < MIN_KG then
+        return false
+    end
+
+    if price ~= nil
+    and price ~= PRICE then
+
+        return false
+    end
+
+    return true
+end
+
+--========================================================--
+-- GET BOOTH DATA
+--========================================================--
+
+local function getBoothData()
+
+    if not BoothReplication then
+
+        warn(
+            "[BOOTH DATA] ReplicationReciever unavailable."
+        )
+
+        return nil
+    end
+
+    local success, data =
+        pcall(function()
+
+            return BoothReplication:GetDataAsync()
+
+        end)
+
+    if not success then
+
+        warn(
+            "[BOOTH DATA] Failed:",
+            data
+        )
+
+        return nil
+    end
+
+    return data
+end
+
+--========================================================--
+-- REMOVE INVALID LISTINGS
+--========================================================--
+
+local function removeInvalidListings()
+
+    print(
+        "[REMOVE] Reading booth data..."
+    )
+
+    local data =
+        getBoothData()
+
+    if not data then
+
+        warn(
+            "[REMOVE] Booth data tidak tersedia."
+        )
+
+        return
+    end
+
+    local playerKey =
+        "Player_" ..
+        tostring(
+            LocalPlayer.UserId
+        )
+
+    local playerData =
+        data.Players
+        and data.Players[playerKey]
+
+    if not playerData then
+
+        warn(
+            "[REMOVE] Player booth data tidak ditemukan."
+        )
+
+        return
+    end
+
+    local listings =
+        playerData.Listings
+
+    if not listings then
+
+        print(
+            "[REMOVE] Tidak ada listing."
+        )
+
+        return
+    end
+
+    local items =
+        playerData.Items or {}
+
+    local checked = 0
+    local kept = 0
+    local removed = 0
+
+    for listingId, listing in pairs(
+        listings
+    ) do
+
+        checked += 1
+
+        local item =
+            items[listing.ItemId]
+
+        local petType =
+            item
+            and item.PetType
+
+        local petData =
+            item
+            and item.PetData
+
+        local baseWeight =
+            petData
+            and petData.BaseWeight
+
+        local price =
+            listing.Price
+
+        local valid =
+            matchesTarget(
+                petType,
+                baseWeight,
+                price
+            )
+
+        if valid then
+
+            kept += 1
+
+            print(
+                string.format(
+                    "[KEEP] %s | %.2f KG | PRICE=%s",
+                    tostring(petType),
+                    tonumber(baseWeight) or 0,
+                    tostring(price)
+                )
+            )
+
+        else
+
+            removed += 1
+
+            print(
+                string.format(
+                    "[REMOVE] %s | %.2f KG | PRICE=%s",
+                    tostring(petType),
+                    tonumber(baseWeight) or 0,
+                    tostring(price)
+                )
+            )
+
+            pcall(function()
+
+                RemoveListing:InvokeServer(
+                    listingId
+                )
+
+            end)
+
+            task.wait(
+                REMOVE_DELAY
+            )
+        end
+    end
+
+    print(
+        string.format(
+            "[REMOVE DONE] Checked=%d | Keep=%d | Removed=%d",
+            checked,
+            kept,
+            removed
+        )
+    )
 end
 
 --========================================================--
@@ -407,11 +650,12 @@ local function listPet(tool)
     or not tool.Parent then
 
         return false
-
     end
 
     local uuid =
-        tool:GetAttribute("PET_UUID")
+        tool:GetAttribute(
+            "PET_UUID"
+        )
 
     if not uuid then
 
@@ -421,7 +665,6 @@ local function listPet(tool)
         )
 
         return false
-
     end
 
     local args = {
@@ -430,10 +673,10 @@ local function listPet(tool)
         [3] = PRICE
     }
 
-    local success, err =
+    local success, result =
         pcall(function()
 
-            CreateListing:InvokeServer(
+            return CreateListing:InvokeServer(
                 unpack(args)
             )
 
@@ -445,7 +688,9 @@ local function listPet(tool)
             string.format(
                 "[LISTED] %s | KG=%s | UUID=%s | PRICE=%s",
                 tool.Name,
-                tostring(getWeight(tool.Name)),
+                tostring(
+                    getWeight(tool.Name)
+                ),
                 tostring(uuid),
                 tostring(PRICE)
             )
@@ -457,11 +702,10 @@ local function listPet(tool)
 
         warn(
             "[LIST] Failed:",
-            err
+            result
         )
 
         return false
-
     end
 end
 
@@ -473,7 +717,9 @@ local function getListingCandidates()
 
     local candidates = {}
 
-    for _, tool in ipairs(Backpack:GetChildren()) do
+    for _, tool in ipairs(
+        Backpack:GetChildren()
+    ) do
 
         if tool:IsA("Tool") then
 
@@ -485,7 +731,9 @@ local function getListingCandidates()
             ) then
 
                 local weight =
-                    getWeight(tool.Name)
+                    getWeight(
+                        tool.Name
+                    )
 
                 if weight
                 and weight >= MIN_KG then
@@ -494,13 +742,9 @@ local function getListingCandidates()
                         candidates,
                         tool
                     )
-
                 end
-
             end
-
         end
-
     end
 
     return candidates
@@ -518,7 +762,9 @@ local function startAutoListing()
         "seconds..."
     )
 
-    task.wait(LIST_START_DELAY)
+    task.wait(
+        LIST_START_DELAY
+    )
 
     while true do
 
@@ -538,7 +784,9 @@ local function startAutoListing()
 
         end
 
-        for _, tool in ipairs(candidates) do
+        for _, tool in ipairs(
+            candidates
+        ) do
 
             if tool
             and tool.Parent == Backpack then
@@ -548,13 +796,12 @@ local function startAutoListing()
                 task.wait(
                     PER_ITEM_DELAY
                 )
-
             end
-
         end
 
-        task.wait(60)
-
+        task.wait(
+            SCAN_DELAY
+        )
     end
 end
 
@@ -565,7 +812,11 @@ end
 pcall(function()
 
     TeleportService.TeleportInitFailed:Connect(
-        function(player, result, message)
+        function(
+            player,
+            result,
+            message
+        )
 
             if player == LocalPlayer then
 
@@ -574,12 +825,9 @@ pcall(function()
                     tostring(result),
                     tostring(message)
                 )
-
             end
-
         end
     )
-
 end)
 
 --========================================================--
@@ -648,7 +896,6 @@ if game.PlaceId ~= TRADE_WORLD_ID then
             "[TRADE] Travel failed:",
             err
         )
-
     end
 
     return
@@ -662,7 +909,9 @@ print(
     "[TRADE] Already in Trade World."
 )
 
-task.wait(TRADE_WAIT)
+task.wait(
+    TRADE_WAIT
+)
 
 --========================================================--
 -- BLACKLIST CHECK
@@ -698,7 +947,7 @@ if not boothSuccess then
 end
 
 --========================================================--
--- START LISTING
+-- REMOVE INVALID LISTINGS FIRST
 --========================================================--
 
 print(
@@ -706,9 +955,23 @@ print(
 )
 
 print(
-    "[LIST] Starting Auto Peryton Listing..."
+    "[REMOVE] Checking existing listings..."
+)
+
+removeInvalidListings()
+
+--========================================================--
+-- START AUTO LIST
+--========================================================--
+
+print(
+    "[TRADE] Starting Auto Peryton Listing..."
 )
 
 task.spawn(
     startAutoListing
+)
+
+print(
+    "[SYSTEM READY] KEEP VALID + REMOVE INVALID + AUTO LIST"
 )
