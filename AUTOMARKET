@@ -1,4 +1,4 @@
---====================================================a====--
+--====================================================aa====--
 -- AUTOMARKET
 -- MARKET AUTO PERYTON
 --
@@ -766,7 +766,10 @@ end
 
 --========================================================--
 -- HOP TO HIGHEST SERVER
+-- RETRY LOOP JIKA TELEPORT GAGAL / SERVER PENUH
 --========================================================--
+
+local teleportFailed = false
 
 local function hopToHighestServer()
 
@@ -780,183 +783,207 @@ local function hopToHighestServer()
 
     end
 
-
     if isKicked then
         return false
     end
 
-
     hopRunning = true
 
+    while not isKicked do
 
-    print(
-        "=========================================="
-    )
-
-    print(
-        "[SERVER HOP] Mencari server teramai..."
-    )
-
-    print(
-        "[SERVER HOP] Maximum players:",
-        MAX_HOP_PLAYERS
-    )
-
-    print(
-        "=========================================="
-    )
-
-
-    task.wait(
-        HOP_DELAY
-    )
-
-
-    local servers =
-        getServers()
-
-
-    if #servers == 0 then
-
-        warn(
-            "[SERVER HOP] Tidak ada server valid."
-        )
-
-        warn(
-            "[SERVER HOP] Syarat: belum penuh + <= "
-            .. tostring(MAX_HOP_PLAYERS)
-            .. " player."
-        )
-
-
-        hopRunning = false
-
-        return false
-
-    end
-
-
-    --====================================================--
-    -- DEBUG TOP SERVER
-    --====================================================--
-
-    print(
-        "=========================================="
-    )
-
-    print(
-        "[SERVER HOP] TOP SERVER TERAMAI"
-    )
-
-    print(
-        "=========================================="
-    )
-
-
-    for i = 1, math.min(
-        10,
-        #servers
-    ) do
-
-        local server =
-            servers[i]
-
+        teleportFailed = false
 
         print(
-            i,
-            "| Players:",
+            "=========================================="
+        )
+
+        print(
+            "[SERVER HOP] Mencari server teramai..."
+        )
+
+        print(
+            "[SERVER HOP] Maximum players:",
+            MAX_HOP_PLAYERS
+        )
+
+        print(
+            "=========================================="
+        )
+
+        task.wait(HOP_DELAY)
+
+        --================================================--
+        -- AMBIL SERVER TERBARU
+        --================================================--
+
+        local servers =
+            getServers()
+
+        if #servers == 0 then
+
+            warn(
+                "[SERVER HOP] Tidak ada server valid."
+            )
+
+            warn(
+                "[SERVER HOP] Coba lagi..."
+            )
+
+            task.wait(2)
+
+            continue
+
+        end
+
+        --================================================--
+        -- PILIH SERVER TERAMAI
+        --================================================--
+
+        local server =
+            getHighestServer(
+                servers
+            )
+
+        if not server then
+
+            warn(
+                "[SERVER HOP] Gagal memilih server."
+            )
+
+            task.wait(2)
+
+            continue
+
+        end
+
+        print(
+            "=========================================="
+        )
+
+        print(
+            "[SERVER HOP] SERVER TERPILIH"
+        )
+
+        print(
+            "[SERVER HOP] Players:",
             tostring(server.playing),
             "/",
-            tostring(server.maxPlayers),
-            "| JobId:",
+            tostring(server.maxPlayers)
+        )
+
+        print(
+            "[SERVER HOP] JobId:",
             tostring(server.id)
         )
 
-    end
-
-
-    --====================================================--
-    -- SELECT
-    --====================================================--
-
-    local server =
-        getHighestServer(
-            servers
+        print(
+            "=========================================="
         )
 
+        --================================================--
+        -- TELEPORT
+        --================================================--
 
-    if not server then
+        local success, errorMessage =
+            pcall(function()
 
-        warn(
-            "[SERVER HOP] Gagal memilih server."
+                TeleportService:
+                    TeleportToPlaceInstance(
+                        game.PlaceId,
+                        server.id,
+                        LocalPlayer
+                    )
+
+            end)
+
+        --================================================--
+        -- TELEPORT REQUEST ERROR
+        --================================================--
+
+        if not success then
+
+            warn(
+                "[SERVER HOP] TELEPORT ERROR:",
+                tostring(errorMessage)
+            )
+
+            warn(
+                "[SERVER HOP] Mencoba server lain..."
+            )
+
+            task.wait(1)
+
+            continue
+
+        end
+
+        print(
+            "[SERVER HOP] Teleport request dikirim."
         )
 
+        --================================================--
+        -- TUNGGU HASIL TELEPORT
+        --================================================--
 
-        hopRunning = false
+        local elapsed = 0
 
-        return false
+        while elapsed < 8 do
+
+            if isKicked then
+
+                hopRunning = false
+
+                return false
+
+            end
+
+            if teleportFailed then
+                break
+            end
+
+            task.wait(0.25)
+
+            elapsed += 0.25
+
+        end
+
+        --================================================--
+        -- TELEPORT GAGAL
+        --================================================--
+
+        if teleportFailed then
+
+            warn(
+                "[SERVER HOP] Server penuh / teleport gagal."
+            )
+
+            warn(
+                "[SERVER HOP] Mencari server baru..."
+            )
+
+            task.wait(1)
+
+            continue
+
+        end
+
+        --================================================--
+        -- TELEPORT DITERIMA
+        --================================================--
+
+        print(
+            "[SERVER HOP] Teleport diterima."
+        )
+
+        -- Jangan reset hopRunning di sini.
+        -- Jika berhasil, Roblox akan pindah place.
+        return true
 
     end
 
+    hopRunning = false
 
-    print(
-        "=========================================="
-    )
-
-    print(
-        "[SERVER HOP] SERVER TERPILIH"
-    )
-
-    print(
-        "[SERVER HOP] Players:",
-        tostring(server.playing),
-        "/",
-        tostring(server.maxPlayers)
-    )
-
-    print(
-        "[SERVER HOP] JobId:",
-        tostring(server.id)
-    )
-
-    print(
-        "=========================================="
-    )
-
-
-    --====================================================--
-    -- TELEPORT
-    --====================================================--
-
-    local success, errorMessage =
-        pcall(function()
-
-            TeleportService:
-                TeleportToPlaceInstance(
-                    game.PlaceId,
-                    server.id,
-                    LocalPlayer
-                )
-
-        end)
-
-
-    if not success then
-
-        warn(
-            "[SERVER HOP] TELEPORT ERROR:",
-            tostring(errorMessage)
-        )
-
-
-        hopRunning = false
-
-        return false
-
-    end
-
-
-    return true
+    return false
 
 end
 
