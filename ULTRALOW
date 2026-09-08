@@ -1,0 +1,308 @@
+--==================================================
+-- ULTRA EXTREME GRAPHIC
+--==================================================
+-- ALL PART TRANSPARENT
+-- REMOVE TEXTURE
+-- REMOVE DECAL
+-- REMOVE SURFACE APPEARANCE
+-- REMOVE STUDS
+-- REMOVE SHADOW
+-- REMOVE EFFECTS
+-- REMOVE OTHER PLAYERS
+-- REMOVE BOOTH DYNAMICINSTANCES
+--==================================================
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+local TradeWorld = Workspace:WaitForChild("TradeWorld")
+local Booths = TradeWorld:WaitForChild("Booths")
+
+
+--==================================================
+-- ULTRA LOW RENDERING
+--==================================================
+
+pcall(function()
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+end)
+
+
+--==================================================
+-- LOW LIGHTING
+--==================================================
+
+pcall(function()
+
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 100000
+    Lighting.Brightness = 1
+
+    Lighting.EnvironmentDiffuseScale = 0
+    Lighting.EnvironmentSpecularScale = 0
+
+end)
+
+
+--==================================================
+-- REMOVE LIGHTING EFFECTS
+--==================================================
+
+for _, Object in ipairs(Lighting:GetChildren()) do
+
+    if Object:IsA("PostEffect")
+        or Object:IsA("Atmosphere")
+        or Object:IsA("Clouds") then
+
+        Object:Destroy()
+
+    end
+
+end
+
+
+--==================================================
+-- LOW TERRAIN
+--==================================================
+
+pcall(function()
+
+    local Terrain = Workspace.Terrain
+
+    Terrain.Decoration = false
+
+    Terrain.WaterWaveSize = 0
+    Terrain.WaterWaveSpeed = 0
+    Terrain.WaterReflectance = 0
+    Terrain.WaterTransparency = 0
+
+end)
+
+
+--==================================================
+-- ULTRA OPTIMIZE OBJECT
+--==================================================
+
+local function OptimizeObject(Object)
+
+    pcall(function()
+
+        --==========================================
+        -- REMOVE IMAGE / TEXTURE
+        --==========================================
+
+        if Object:IsA("Texture")
+            or Object:IsA("Decal")
+            or Object:IsA("SurfaceAppearance") then
+
+            Object:Destroy()
+
+            return
+        end
+
+
+        --==========================================
+        -- DISABLE VISUAL EFFECTS
+        --==========================================
+
+        if Object:IsA("ParticleEmitter")
+            or Object:IsA("Trail")
+            or Object:IsA("Beam")
+            or Object:IsA("Smoke")
+            or Object:IsA("Fire")
+            or Object:IsA("Sparkles") then
+
+            Object.Enabled = false
+
+        end
+
+
+        --==========================================
+        -- DISABLE LIGHTS
+        --==========================================
+
+        if Object:IsA("PointLight")
+            or Object:IsA("SpotLight")
+            or Object:IsA("SurfaceLight") then
+
+            Object.Enabled = false
+
+        end
+
+
+        --==========================================
+        -- ALL PART TRANSPARENT
+        --==========================================
+
+        if Object:IsA("BasePart") then
+
+            -- Make invisible
+            Object.Transparency = 1
+
+            -- Remove shadows
+            Object.CastShadow = false
+
+            -- Simple material
+            Object.Material = Enum.Material.Plastic
+
+            -- Remove reflection
+            Object.Reflectance = 0
+
+            -- Remove Roblox studs
+            Object.TopSurface = Enum.SurfaceType.Smooth
+            Object.BottomSurface = Enum.SurfaceType.Smooth
+            Object.LeftSurface = Enum.SurfaceType.Smooth
+            Object.RightSurface = Enum.SurfaceType.Smooth
+            Object.FrontSurface = Enum.SurfaceType.Smooth
+            Object.BackSurface = Enum.SurfaceType.Smooth
+
+        end
+
+    end)
+
+end
+
+
+--==================================================
+-- OPTIMIZE EXISTING OBJECTS
+--==================================================
+
+for _, Object in ipairs(Workspace:GetDescendants()) do
+
+    OptimizeObject(Object)
+
+end
+
+
+--==================================================
+-- OPTIMIZE NEW OBJECTS
+--==================================================
+
+Workspace.DescendantAdded:Connect(function(Object)
+
+    OptimizeObject(Object)
+
+end)
+
+
+--==================================================
+-- REMOVE OTHER PLAYER CHARACTERS
+--==================================================
+
+for _, Player in ipairs(Players:GetPlayers()) do
+
+    if Player ~= LocalPlayer then
+
+        local Character = Player.Character
+
+        if Character then
+            Character:Destroy()
+        end
+
+    end
+
+end
+
+
+--==================================================
+-- REMOVE OTHER PLAYERS WHEN THEY SPAWN
+--==================================================
+
+Players.PlayerAdded:Connect(function(Player)
+
+    if Player == LocalPlayer then
+        return
+    end
+
+    Player.CharacterAdded:Connect(function(Character)
+
+        Character:Destroy()
+
+    end)
+
+end)
+
+
+--==================================================
+-- REMOVE BOOTH DYNAMICINSTANCES
+--==================================================
+
+local function RemoveDynamicInstances(Booth)
+
+    if not Booth then
+        return
+    end
+
+
+    --==============================================
+    -- REMOVE EXISTING
+    --==============================================
+
+    local DynamicInstances =
+        Booth:FindFirstChild("DynamicInstances")
+
+    if DynamicInstances then
+
+        DynamicInstances:Destroy()
+
+    end
+
+
+    --==============================================
+    -- REMOVE NEW
+    --==============================================
+
+    Booth.ChildAdded:Connect(function(Object)
+
+        if Object.Name == "DynamicInstances" then
+
+            Object:Destroy()
+
+        end
+
+    end)
+
+end
+
+
+--==================================================
+-- EXISTING BOOTHS
+--==================================================
+
+for _, Booth in ipairs(Booths:GetChildren()) do
+
+    RemoveDynamicInstances(Booth)
+
+end
+
+
+--==================================================
+-- NEW BOOTHS
+--==================================================
+
+Booths.ChildAdded:Connect(function(Booth)
+
+    RemoveDynamicInstances(Booth)
+
+end)
+
+
+--==================================================
+-- DONE
+--==================================================
+
+print("======================================")
+print(" ULTRA EXTREME GRAPHIC : ON")
+print(" ALL PART TRANSPARENT : ON")
+print(" TEXTURE REMOVED      : ON")
+print(" DECAL REMOVED        : ON")
+print(" SURFACE APPEARANCE   : ON")
+print(" STUDS REMOVED        : ON")
+print(" SHADOW REMOVED       : ON")
+print(" EFFECTS DISABLED     : ON")
+print(" OTHER PLAYERS        : REMOVED")
+print(" DYNAMIC INSTANCES    : REMOVED")
+print("======================================")
