@@ -1,6 +1,7 @@
 --==================================================
 -- ULTRA EXTREME GRAPHIC
 --==================================================
+-- DELAY 5 DETIK
 -- ALL PART TRANSPARENT
 -- REMOVE TEXTURE
 -- REMOVE DECAL
@@ -17,6 +18,18 @@ local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
+
+
+--==================================================
+-- START DELAY
+--==================================================
+
+task.wait(5)
+
+
+--==================================================
+-- TRADE WORLD
+--==================================================
 
 local TradeWorld = Workspace:WaitForChild("TradeWorld")
 local Booths = TradeWorld:WaitForChild("Booths")
@@ -139,19 +152,15 @@ local function OptimizeObject(Object)
 
         if Object:IsA("BasePart") then
 
-            -- Make invisible
             Object.Transparency = 1
 
-            -- Remove shadows
             Object.CastShadow = false
 
-            -- Simple material
             Object.Material = Enum.Material.Plastic
 
-            -- Remove reflection
             Object.Reflectance = 0
 
-            -- Remove Roblox studs
+            -- Remove Roblox Studs
             Object.TopSurface = Enum.SurfaceType.Smooth
             Object.BottomSurface = Enum.SurfaceType.Smooth
             Object.LeftSurface = Enum.SurfaceType.Smooth
@@ -305,4 +314,5 @@ print(" SHADOW REMOVED       : ON")
 print(" EFFECTS DISABLED     : ON")
 print(" OTHER PLAYERS        : REMOVED")
 print(" DYNAMIC INSTANCES    : REMOVED")
+print(" DELAY                : 5 SECONDS")
 print("======================================")
