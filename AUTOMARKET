@@ -83,7 +83,7 @@ local HOP_DELAY = 1
 
 local TARGET_NAME = "Peryton"
 
-local MIN_KG = 0.5
+local MAX_KG = 2.9
 
 local PRICE = 15
 
@@ -1407,7 +1407,7 @@ local function matchesTarget(
     end
 
 
-    if weight < MIN_KG then
+    if weight > MAX_KG then
         return false
     end
 
@@ -1762,7 +1762,7 @@ local function getListingCandidates()
 
 
                 if weight
-                and weight >= MIN_KG then
+                and weight <= MAX_KG then
 
                     table.insert(
                         candidates,
